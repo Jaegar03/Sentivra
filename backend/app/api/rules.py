@@ -10,8 +10,9 @@ from app.api.deps import get_detector_registry
 from app.core.config import get_settings
 from app.core.rules import attack_index, load_yaml, rules_path
 from app.detectors.registry import DetectorRegistry
+from app.security.auth import require_scopes
 
-router = APIRouter(prefix="/api/v1", tags=["rules"])
+router = APIRouter(prefix="/api/v1", tags=["rules"], dependencies=[Depends(require_scopes("read"))])
 
 _CUSTOM_PACKS = {
     "network_rules.yaml": "NetworkAnomalyDetector",

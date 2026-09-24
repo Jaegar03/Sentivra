@@ -28,11 +28,12 @@ from app.detectors.network.suite import BatchAnalysis
 from app.detectors.registry import DetectorRegistry
 from app.events.schema import SecurityEvent, SecurityEventType, SourceType
 from app.ml.batch_stats import excess_flags
+from app.security.auth import require_scopes
 from app.security.uploads import UploadTooLarge, validate_upload_size
 from app.services.pipeline import run_pipeline
 from app.services.transient_store import flow_batches
 
-router = APIRouter(prefix="/api/v1/network", tags=["network"])
+router = APIRouter(prefix="/api/v1/network", tags=["network"], dependencies=[Depends(require_scopes("analyze"))])
 
 
 def _serialize(analysis: BatchAnalysis | None) -> dict:
@@ -96,7 +97,7 @@ async def _analyze(
             source_type=source_type,
             metadata={**metadata, "flow_batch_id": batch_id, "flow_count": len(flows)},
         )
-        findings, assessment = await run_pipeline(event, db=db, registry=registry, actor=f"{source}_api")
+        findings, assessment = await run_pipeline(event, db=db, registry=registry)
     finally:
         flow_batches.discard(batch_id)
     return {

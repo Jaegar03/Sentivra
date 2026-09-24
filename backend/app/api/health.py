@@ -17,11 +17,19 @@ from app.api.deps import get_db, get_detector_registry
 from app.core.config import get_settings
 from app.detectors.registry import DetectorRegistry
 from app.models.orm import EventORM
+from app.security.auth import require_scopes
 
 router = APIRouter(prefix="/api/v1", tags=["system"])
+# Liveness only (no detail): usable by monitors without credentials.
+public_router = APIRouter(prefix="/api/v1", tags=["system"])
 
 
-@router.get("/health")
+@public_router.get("/health/live")
+async def live() -> dict:
+    return {"status": "ok"}
+
+
+@router.get("/health", dependencies=[Depends(require_scopes("read"))])
 async def health(
     db: Session = Depends(get_db),
     registry: DetectorRegistry = Depends(get_detector_registry),

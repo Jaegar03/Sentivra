@@ -17,6 +17,7 @@ from app.detectors.registry import DetectorRegistry
 from app.events.schema import SecurityEvent
 from app.risk.engine import RiskEngine
 from app.schemas.detection import DetectionResult, RiskAssessment
+from app.security.auth import current_actor
 from app.services.alert_repository import AlertRepository
 from app.services.event_repository import EventRepository
 
@@ -30,7 +31,7 @@ async def run_pipeline(
     *,
     db: Session,
     registry: DetectorRegistry,
-    actor: str = "api",
+    actor: str | None = None,
 ) -> tuple[list[DetectionResult], RiskAssessment]:
     detectors = registry.applicable_to(event)
 
@@ -51,7 +52,7 @@ async def run_pipeline(
         AlertRepository(db).create(assessment)
     audit_service.record(
         db,
-        actor=actor,
+        actor=actor or current_actor(),
         action="analyze",
         resource=f"event:{event.event_id}",
         detail={"severity": assessment.severity.value, "risk_score": assessment.risk_score},

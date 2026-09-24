@@ -20,6 +20,7 @@ import {
   Siren,
 } from "lucide-react";
 
+import { AuthGate, SessionMenu } from "@/components/sentivra/auth-gate";
 import { StatusPill } from "@/components/sentivra/badges";
 import { ThemeToggle } from "@/components/sentivra/theme-toggle";
 import { useApi } from "@/hooks/use-api";
@@ -58,6 +59,14 @@ function BackendStatus() {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
+  return (
+    <AuthGate>
+      <Shell>{children}</Shell>
+    </AuthGate>
+  );
+}
+
+function Shell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const groups = [...new Set(NAV.map((n) => n.group))];
   return (
@@ -111,6 +120,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="hidden md:block" />
           <div className="flex shrink-0 items-center gap-3">
             <BackendStatus />
+            <SessionMenu />
             <ThemeToggle />
           </div>
         </header>

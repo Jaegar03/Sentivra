@@ -21,10 +21,11 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.models.orm import AlertORM, EventORM
+from app.security.auth import require_scopes
 from app.services.alert_repository import AlertRepository
 from app.services.event_repository import EventRepository
 
-router = APIRouter(prefix="/api/v1", tags=["system"])
+router = APIRouter(prefix="/api/v1", tags=["system"], dependencies=[Depends(require_scopes("read"))])
 
 SCORE_PENALTIES = {"CRITICAL": 25, "HIGH": 10, "MEDIUM": 4, "LOW": 1}
 SEVERITY_ORDER = ("SAFE", "LOW", "MEDIUM", "HIGH", "CRITICAL")

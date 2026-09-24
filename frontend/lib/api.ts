@@ -1,7 +1,10 @@
 // Thin, typed client for the SENTIVRA FastAPI backend.
 // The browser talks to the backend directly; its CORS allowlist admits the
-// dashboard's origin (SENTIVRA_CORS_ORIGINS in the backend .env).
+// dashboard's origin (SENTIVRA_CORS_ORIGINS in the backend .env). Every call
+// carries the session's bearer token. Browsers never attach that header on
+// their own, so a hostile page can't make authenticated requests (no CSRF).
 
+import { clearToken, getToken } from "@/lib/auth";
 import type {
   AlertStatus,
   BatchAnalysisResponse,
@@ -21,9 +24,12 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  const token = getToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
   let response: Response;
   try {
-    response = await fetch(`${API_BASE}${path}`, init);
+    response = await fetch(`${API_BASE}${path}`, { ...init, headers });
   } catch {
     // fetch() rejects the same way for "server down" and "blocked by CORS",
     // so name both causes and how to fix each.
@@ -33,6 +39,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       `Can't reach the SENTIVRA backend at ${API_BASE}. Check that it's running, and that ${origin} is listed in ` +
         "SENTIVRA_CORS_ORIGINS on the backend.",
     );
+  }
+  if (response.status === 401) {
+    // Expired, revoked, or signed with a key the backend no longer has
+    // (e.g. its .sentivra/ state was reset). Back to the sign-in screen.
+    clearToken();
+    throw new ApiError(401, "Your session has ended. Sign in again.");
   }
   if (!response.ok) {
     let detail = response.statusText;

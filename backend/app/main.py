@@ -18,6 +18,7 @@ from app.api import (
     alerts,
     analyze,
     audit,
+    auth,
     detectors,
     endpoint,
     events,
@@ -40,6 +41,8 @@ from app.detectors.network_anomaly_detector import NetworkAnomalyDetector
 from app.detectors.registry import registry as detector_registry
 from app.detectors.sigma_detector import SigmaDetector
 from app.detectors.yara_detector import YaraDetector
+from app.security.auth import load_clients, signing_key
+from app.security.body_limit import BodySizeLimitMiddleware
 from app.security.headers import SecureHeadersMiddleware
 from app.security.rate_limit import RateLimitMiddleware
 
@@ -67,11 +70,12 @@ def _register_detectors() -> None:
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     settings = get_settings()
-    if settings.is_demo_secret:
-        logger.warning(
-            "SENTIVRA_SECRET_KEY is unset — using the insecure development default. "
-            "Set a real secret before exposing this instance beyond localhost."
-        )
+    # Fail at startup, not on the first request, if auth can't be set up
+    # safely: outside development this refuses the published default secret
+    # key and requires explicitly configured API clients.
+    signing_key()
+    clients = load_clients()
+    logger.info("API clients configured: %s", ", ".join(sorted(clients)))
     init_db()
     _register_detectors()
     logger.info("SENTIVRA backend started (env=%s)", settings.env)
@@ -81,23 +85,33 @@ async def _lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     settings = get_settings()
 
+    # Interactive docs and the OpenAPI schema are a development convenience;
+    # outside development they're switched off rather than left public.
+    docs = {} if settings.is_development else {"docs_url": None, "redoc_url": None, "openapi_url": None}
     app = FastAPI(
         title="SENTIVRA API",
         description="One Security Layer. Every Threat.",
         version="0.1.0",
         lifespan=_lifespan,
+        **docs,
     )
 
+    # Order matters: the last middleware added runs first. Body limits sit
+    # closest to the routes; their 413s still pass back through the secure
+    # headers, the rate limiter and CORS.
+    app.add_middleware(BodySizeLimitMiddleware)
     app.add_middleware(SecureHeadersMiddleware)
     app.add_middleware(RateLimitMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
-        allow_credentials=True,
+        allow_credentials=False,  # bearer tokens, no cookies: no credentialed CORS needed
         allow_methods=["GET", "POST", "PATCH"],
-        allow_headers=["*"],
+        allow_headers=["Authorization", "Content-Type"],
     )
 
+    app.include_router(auth.router)
+    app.include_router(health.public_router)
     app.include_router(health.router)
     app.include_router(detectors.router)
     app.include_router(models.router)

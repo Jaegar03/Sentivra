@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.audit import service as audit_service
 from app.schemas.detection import Severity
+from app.security.auth import current_actor, require_scopes
 from app.services.alert_repository import AlertRepository
 from app.services.event_repository import EventRepository
 
@@ -29,7 +30,7 @@ class AlertStatusUpdate(BaseModel):
     note: str | None = Field(default=None, max_length=500)
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_scopes("read"))])
 async def list_alerts(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -48,7 +49,7 @@ async def list_alerts(
     ]
 
 
-@router.get("/{alert_id}")
+@router.get("/{alert_id}", dependencies=[Depends(require_scopes("read"))])
 async def get_alert(alert_id: str, db: Session = Depends(get_db)) -> dict:
     repo = AlertRepository(db)
     row = repo.get(alert_id)
@@ -63,7 +64,7 @@ async def get_alert(alert_id: str, db: Session = Depends(get_db)) -> dict:
     }
 
 
-@router.patch("/{alert_id}")
+@router.patch("/{alert_id}", dependencies=[Depends(require_scopes("alerts:write"))])
 async def update_alert_status(alert_id: str, update: AlertStatusUpdate, db: Session = Depends(get_db)) -> dict:
     repo = AlertRepository(db)
     row = repo.get(alert_id)
@@ -71,6 +72,6 @@ async def update_alert_status(alert_id: str, update: AlertStatusUpdate, db: Sess
         raise HTTPException(status_code=404, detail="Alert not found")
     previous = row.status
     repo.set_status(row, update.status)
-    audit_service.record(db, actor="dashboard", action="alert_status_change", resource=f"alert:{alert_id}",
+    audit_service.record(db, actor=current_actor(), action="alert_status_change", resource=f"alert:{alert_id}",
                          detail={"from": previous, "to": update.status, "note": update.note})
     return {"alert_id": alert_id, "status": row.status, "previous_status": previous}

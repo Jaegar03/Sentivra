@@ -1,6 +1,10 @@
 """In-process sliding-window rate limiter (ASGI middleware).
 
-Demo-scope note: state is per-process, in memory — fine for the single
+Two budgets per client IP: the general API budget, and a much smaller one
+for the token endpoint, which is the one place a client secret could be
+brute-forced.
+
+Demo-scope note: state is per-process, in memory, which fits the single
 uvicorn process this phase runs as (docs/architecture.md §2). A future
 multi-worker/distributed deployment moves this to Redis, behind the same
 `RateLimiter` interface, without changing call sites.
@@ -16,6 +20,9 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 from app.core.config import get_settings
+
+# bandit B105: a URL path, not a secret
+TOKEN_PATH = "/api/v1/auth/token"  # nosec B105
 
 
 class RateLimiter:
@@ -36,15 +43,19 @@ class RateLimiter:
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, limiter: RateLimiter | None = None) -> None:
+    def __init__(self, app, limiter: RateLimiter | None = None, token_limiter: RateLimiter | None = None) -> None:
         super().__init__(app)
-        self._limiter = limiter or RateLimiter(get_settings().rate_limit_per_minute)
+        settings = get_settings()
+        self._limiter = limiter or RateLimiter(settings.rate_limit_per_minute)
+        self._token_limiter = token_limiter or RateLimiter(settings.token_rate_limit_per_minute)
 
     async def dispatch(self, request: Request, call_next):
         client_key = request.client.host if request.client else "unknown"
-        if not self._limiter.allow(client_key):
+        limiter = self._token_limiter if request.url.path == TOKEN_PATH else self._limiter
+        if not limiter.allow(client_key):
             return JSONResponse(
                 status_code=429,
+                headers={"Retry-After": "60"},
                 content={"detail": "Rate limit exceeded. Try again shortly."},
             )
         return await call_next(request)

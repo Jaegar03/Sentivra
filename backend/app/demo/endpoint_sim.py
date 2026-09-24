@@ -148,7 +148,8 @@ class _Sim:
                    "explorer.exe", True)
         for port in (135, 445):
             self.emit(host, "listening_ports", self.t0 + 2, {"pid": host.pids[r"C:\Windows\System32\svchost.exe"],
-                                                             "port": port, "protocol": 6, "address": "0.0.0.0",
+                                                             # bandit B104: simulated osquery row; nothing binds
+                                                             "port": port, "protocol": 6, "address": "0.0.0.0",  # nosec B104
                                                              "path": r"C:\Windows\System32\svchost.exe"})
         # Legitimate autostart entries, several of them in AppData
         for name, path in (("OneDrive", rf"{home}\AppData\Local\Microsoft\OneDrive\OneDrive.exe"),
@@ -200,7 +201,8 @@ class _Sim:
         self.start(host, self.t0, "/usr/sbin/sshd", "/usr/lib/systemd/systemd", "/usr/sbin/sshd -D", None)
         self.start(host, self.t0, "/usr/sbin/cron", "/usr/lib/systemd/systemd", "/usr/sbin/cron -f", None)
         self.emit(host, "listening_ports", self.t0 + 1, {"pid": host.pids["/usr/sbin/sshd"], "port": 22, "protocol": 6,
-                                                         "address": "0.0.0.0", "path": "/usr/sbin/sshd"})
+                                                         # bandit B104: simulated osquery row; nothing binds
+                                                         "address": "0.0.0.0", "path": "/usr/sbin/sshd"})  # nosec B104
         self.emit(host, "crontab", self.t0 + 1, {"event": "", "minute": "0", "hour": "2",
                                                  "command": "/usr/local/bin/backup.sh", "path": "/etc/crontab"})
         for _ in range(int(self.cfg.hours * 6)):
@@ -279,10 +281,12 @@ class _Sim:
         path = rf"C:\Users\Public\{self.rand_name()}.exe"
         pid = self.start(h, t, path, r"C:\Windows\explorer.exe", f"{path} [SIMULATED]", False, label)
         self.emit(h, "listening_ports", t + 2, {"pid": pid, "port": int(self.rng.integers(20000, 40000)), "protocol": 6,
-                                                "address": "0.0.0.0", "path": path}, label)
+                                                # bandit B104: simulated osquery row; nothing binds
+                                                "address": "0.0.0.0", "path": path}, label)  # nosec B104
 
     def _ep_linux_exec_from_tmp(self, h: _Host, t: int, label: str) -> None:
-        path = f"/tmp/.{self.rand_name(5)}/{self.rand_name(6)}"
+        # bandit B108: simulated path string; no file is created
+        path = f"/tmp/.{self.rand_name(5)}/{self.rand_name(6)}"  # nosec B108
         self.start(h, t, "/usr/bin/bash", "/usr/sbin/sshd", "-bash", None)
         pid = self.start(h, t + 2, path, "/usr/bin/bash", f"{path} [SIMULATED]", None, label)
         for i in range(int(self.rng.integers(2, 6))):

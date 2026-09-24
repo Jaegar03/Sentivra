@@ -31,3 +31,6 @@ Thumbs.db
 # the scripts in research/datasets/, so the data itself is never committed.
 research/datasets/raw/
 research/datasets/generated/
+
+# Local runtime state: generated API signing key and client-secret hashes
+.sentivra/

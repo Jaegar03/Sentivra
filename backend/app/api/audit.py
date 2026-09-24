@@ -11,8 +11,9 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.models.orm import AuditLogORM
+from app.security.auth import require_scopes
 
-router = APIRouter(prefix="/api/v1", tags=["audit"])
+router = APIRouter(prefix="/api/v1", tags=["audit"], dependencies=[Depends(require_scopes("read"))])
 
 
 @router.get("/audit")

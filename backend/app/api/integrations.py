@@ -15,8 +15,9 @@ from fastapi import APIRouter, Depends
 from app.api.deps import get_detector_registry
 from app.core.config import get_settings
 from app.detectors.registry import DetectorRegistry
+from app.security.auth import require_scopes
 
-router = APIRouter(prefix="/api/v1", tags=["integrations"])
+router = APIRouter(prefix="/api/v1", tags=["integrations"], dependencies=[Depends(require_scopes("read"))])
 
 
 @router.get("/integrations")

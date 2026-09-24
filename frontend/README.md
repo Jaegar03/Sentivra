@@ -22,6 +22,20 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 
 and add the dashboard's origin to `SENTIVRA_CORS_ORIGINS` on the backend. If the dashboard shows "Can't reach the SENTIVRA backend", either the backend isn't running or the origin you opened (`localhost` and `127.0.0.1` count as different origins) isn't in that list.
 
+`NEXT_PUBLIC_API_BASE_URL` is read at build time. It's also the only API origin the dashboard's Content-Security-Policy allows, so rebuild after changing it.
+
+## Sign-in
+
+The backend requires an OAuth2 access token on every call. The dashboard signs in as an API client:
+
+1. Enter client ID `dashboard` and its secret. A development backend prints the secret once, on first start.
+2. `lib/auth.ts` exchanges them at `/api/v1/auth/token` (client credentials) and discards the secret.
+3. The access token is kept in `sessionStorage`, so it lasts for this tab only.
+4. `lib/api.ts` sends the token as `Authorization: Bearer …` on every request.
+5. Any `401` (an expired token, or a backend whose keys or clients changed) clears the token and shows the sign-in screen again. **Sign out** in the header does the same and drops cached responses.
+
+No cookies are used, so cross-site request forgery doesn't apply. The page headers (`next.config.ts`) include a Content-Security-Policy whose `connect-src` and `img-src` allow only this origin and the API. Even injected script can't send the token to another host.
+
 ## Pages
 
 | Page | What it shows |
@@ -32,7 +46,7 @@ and add the dashboard's origin to `SENTIVRA_CORS_ORIGINS` on the backend. If the
 | Files | File upload and the EICAR test file |
 | Endpoint | Simulated fleet, osquery results upload and log upload |
 | Messages, Prompt Security | State plainly that these detectors and connectors aren't built yet |
-| Models, Rules, Integrations, Audit Log, Settings | Registry, rule inventory, real integration status, audit trail, connection info |
+| Models, Rules, Integrations, Audit Log, Settings | Registry, rule inventory, real integration status, audit trail (with the acting client), connection and session info |
 | Demo mode | Runs every available scenario; results are labeled Demo data or Simulated |
 
 ## Design rules applied

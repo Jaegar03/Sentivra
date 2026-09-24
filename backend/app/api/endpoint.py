@@ -26,6 +26,7 @@ from app.demo.endpoint_sim import demo_telemetry
 from app.detectors.registry import DetectorRegistry
 from app.events.osquery import OsqueryParseError, normalize
 from app.events.schema import SecurityEventType, SourceType
+from app.security.auth import require_scopes
 from app.security.uploads import UploadTooLarge, validate_upload_size
 
 router = APIRouter(prefix="/api/v1/endpoint", tags=["endpoint"])
@@ -45,7 +46,7 @@ def _parse_results(data: bytes, max_rows: int) -> tuple[list[dict], bool]:
     return rows[:max_rows], len(rows) > max_rows
 
 
-@router.post("/osquery")
+@router.post("/osquery", dependencies=[Depends(require_scopes("ingest"))])
 async def ingest_osquery(
     file: UploadFile,
     db: Session = Depends(get_db),
@@ -69,7 +70,7 @@ async def ingest_osquery(
     )
 
 
-@router.post("/demo")
+@router.post("/demo", dependencies=[Depends(require_scopes("analyze"))])
 async def endpoint_demo(
     seed: int = Query(2026, ge=0, le=10_000),
     db: Session = Depends(get_db),

@@ -18,6 +18,7 @@ from app.api.deps import get_db, get_detector_registry
 from app.detectors.file.metadata import analyze_file
 from app.detectors.registry import DetectorRegistry
 from app.events.schema import AttachmentRef, SecurityEvent, SecurityEventType, SourceType
+from app.security.auth import require_scopes
 from app.security.uploads import (
     ArchiveBombSuspected,
     UploadTooLarge,
@@ -27,7 +28,7 @@ from app.security.uploads import (
 from app.services.file_blob_store import blob_store
 from app.services.pipeline import run_pipeline
 
-router = APIRouter(prefix="/api/v1/analyze", tags=["analyze"])
+router = APIRouter(prefix="/api/v1/analyze", tags=["analyze"], dependencies=[Depends(require_scopes("analyze"))])
 
 _NOT_YET_IMPLEMENTED = (
     "This endpoint is defined by the SENTIVRA API contract (docs/api.md) but its "
@@ -72,7 +73,7 @@ async def analyze_file_endpoint(
             ],
             metadata={"sha256": meta.sha256, "file_metadata": meta.__dict__},
         )
-        findings, assessment = await run_pipeline(event, db=db, registry=registry, actor="analyze_file_api")
+        findings, assessment = await run_pipeline(event, db=db, registry=registry)
     finally:
         blob_store.discard(meta.sha256)  # never retained past this request (brief §30)
 

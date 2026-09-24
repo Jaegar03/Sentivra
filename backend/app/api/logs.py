@@ -20,9 +20,10 @@ from app.core.config import get_settings
 from app.detectors.logs.parsers import parse_lines
 from app.detectors.registry import DetectorRegistry
 from app.events.schema import SecurityEventType, SourceType
+from app.security.auth import require_scopes
 from app.security.uploads import UploadTooLarge, validate_upload_size
 
-router = APIRouter(prefix="/api/v1/logs", tags=["logs"])
+router = APIRouter(prefix="/api/v1/logs", tags=["logs"], dependencies=[Depends(require_scopes("ingest"))])
 
 
 @router.post("/analyze")

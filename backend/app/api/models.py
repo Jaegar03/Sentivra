@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from app.ml.registry import registry as model_registry
+from app.security.auth import require_scopes
 
-router = APIRouter(prefix="/api/v1", tags=["models"])
+router = APIRouter(prefix="/api/v1", tags=["models"], dependencies=[Depends(require_scopes("read"))])
 
 
 @router.get("/models")

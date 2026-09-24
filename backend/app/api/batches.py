@@ -35,7 +35,7 @@ async def analyze_batch(
             source_type=source_type,
             metadata={**metadata, "event_batch_id": batch_id, "event_count": len(events), "hosts": hosts[:50]},
         )
-        findings, assessment = await run_pipeline(event, db=db, registry=registry, actor=f"{source}_api")
+        findings, assessment = await run_pipeline(event, db=db, registry=registry)
     finally:
         event_batches.discard(batch_id)
     return {

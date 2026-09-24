@@ -21,7 +21,7 @@ Built in phases (see [docs/architecture.md](docs/architecture.md) § Implementat
 | 7 | Gmail / Telegram / WhatsApp Business connectors | ⏳ Planned |
 | 8 | Unified risk engine polish, alert management | 🔄 Engine, explanations and alert status (acknowledge/resolve, audited) done; policy engine reserved for later |
 | 9 | Next.js SOC dashboard | ✅ Done: 14 pages, light and dark; see [frontend/README.md](frontend/README.md) |
-| 10 | Testing & hardening | 🔄 Ongoing per-phase |
+| 10 | Security hardening | ✅ OAuth2 client-credentials with per-route scopes, dashboard sign-in, request-body limits, token-endpoint rate limit, strict response headers and a dashboard CSP. See [docs/api.md](docs/api.md#authentication) and the known gaps in [docs/threat-model.md](docs/threat-model.md) |
 
 ## Quick start
 
@@ -32,16 +32,34 @@ cd backend
 python -m venv .venv
 # Windows: .venv\Scripts\activate    |    macOS/Linux: source .venv/bin/activate
 pip install -e ".[dev]"
-cp ../.env.example ../.env   # edit as needed — safe demo defaults work out of the box
+cp ../.env.example ../.env   # optional: the defaults work for local development
 uvicorn app.main:app --reload
 ```
 
-Then visit `http://localhost:8000/docs` for interactive API docs, or:
+**First start.** Every API route needs a token, and on first start the backend creates an API client for you. Its secret appears once in the log:
+
+```
+  SENTIVRA generated an API client for the dashboard (development only).
+  client_id:     dashboard
+  client_secret: <copy this>
+```
+
+Keep that secret. It's what you paste into the dashboard's sign-in screen. Only its hash is stored, in `.sentivra/clients.json`; to get a new secret, delete that file and restart. Outside development, the backend doesn't generate anything: set `SENTIVRA_SECRET_KEY` and `SENTIVRA_OAUTH_CLIENTS` yourself (see `.env.example`).
+
+Exchange the secret for a token and call the API:
 
 ```bash
-curl http://localhost:8000/api/v1/health
-curl http://localhost:8000/api/v1/detectors
+SECRET='<the client_secret from the log>'
+TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/token \
+  -d grant_type=client_credentials -d client_id=dashboard -d "client_secret=$SECRET" \
+  | python -c "import json,sys; print(json.load(sys.stdin)['access_token'])")
+AUTH="Authorization: Bearer $TOKEN"
+
+curl -H "$AUTH" http://localhost:8000/api/v1/health
+curl -H "$AUTH" http://localhost:8000/api/v1/detectors
 ```
+
+Tokens last an hour. The examples below assume `$AUTH` is set. Interactive API docs are at `http://localhost:8000/docs` (development only). To call routes from there, paste `$TOKEN` into **Authorize**.
 
 Run the test suite:
 
@@ -54,7 +72,7 @@ pytest -q
 
 ```bash
 # The EICAR test string — a standard, harmless antivirus test file, not real malware
-curl -X POST http://localhost:8000/api/v1/analyze/file \
+curl -H "$AUTH" -X POST http://localhost:8000/api/v1/analyze/file \
   -F "file=@eicar.txt;type=text/plain"
 ```
 
@@ -64,10 +82,10 @@ curl -X POST http://localhost:8000/api/v1/analyze/file \
 
 ```bash
 # Bundled synthetic sample (tagged DEMO_DATA in the response)
-curl -X POST http://localhost:8000/api/v1/network/demo
+curl -H "$AUTH" -X POST http://localhost:8000/api/v1/network/demo
 
 # Your own capture or flow export: PCAP/PCAPNG, Sentivra flow CSV, or CICFlowMeter CSV
-curl -X POST http://localhost:8000/api/v1/network/analyze -F "file=@capture.pcap"
+curl -H "$AUTH" -X POST http://localhost:8000/api/v1/network/analyze -F "file=@capture.pcap"
 ```
 
 The response lists which behavior rules fired (with verified ATT&CK mappings where one applies), which flows at least two model layers agreed on, and why. Uploaded traffic is parsed in memory and discarded after the request.
@@ -76,16 +94,16 @@ The response lists which behavior rules fired (with verified ATT&CK mappings whe
 
 ```bash
 # Simulated fleet as osquery telemetry (tagged SIMULATED in the response)
-curl -X POST http://localhost:8000/api/v1/endpoint/demo
+curl -H "$AUTH" -X POST http://localhost:8000/api/v1/endpoint/demo
 
 # Real osquery results from the pack in endpoint-agent/osquery/
-curl -X POST http://localhost:8000/api/v1/endpoint/osquery -F "file=@osqueryd.results.log"
+curl -H "$AUTH" -X POST http://localhost:8000/api/v1/endpoint/osquery -F "file=@osqueryd.results.log"
 
 # auth.log / secure, Windows Security events as JSON lines, or Wazuh alerts.json
-curl -X POST http://localhost:8000/api/v1/logs/analyze -F "file=@auth.log"
+curl -H "$AUTH" -X POST http://localhost:8000/api/v1/logs/analyze -F "file=@auth.log"
 
 # Which rule packs are loaded, and which Sigma rules couldn't be supported
-curl http://localhost:8000/api/v1/rules
+curl -H "$AUTH" http://localhost:8000/api/v1/rules
 ```
 
 ## Dashboard
@@ -96,6 +114,8 @@ npm install
 npm run dev      # http://localhost:3000 (the backend must be running)
 ```
 
+Sign in with client ID `dashboard` and the secret from the backend's first-start log. The dashboard exchanges the secret for a token and keeps only the token, in this browser tab's `sessionStorage`. When the token expires, you're returned to the sign-in screen.
+
 Open **Demo mode** in the sidebar and choose *Run all scenarios* to see the whole pipeline: an EICAR test file, a synthetic network sample and a simulated endpoint fleet, each labeled as live, simulated or demo data everywhere it appears.
 
 ## Documentation
@@ -103,7 +123,7 @@ Open **Demo mode** in the sidebar and choose *Run all scenarios* to see the whol
 - [docs/repository-analysis.md](docs/repository-analysis.md) — survey of every reference repository named in the project brief, with license/maintenance/decision per repo
 - [docs/architecture.md](docs/architecture.md) — system design, data flow, detector matrix, model registry
 - [docs/threat-model.md](docs/threat-model.md) — STRIDE analysis of Sentivra itself, plus stated per-detector limitations
-- [docs/api.md](docs/api.md) — every endpoint, including the ones that answer 501 and the webhooks still to come
+- [docs/api.md](docs/api.md) — authentication and scopes, request limits, every endpoint (including the ones that answer 501) and the webhooks still to come
 - [docs/model-card.md](docs/model-card.md) — every model's data, splits, metrics, evaluation date and limitations
 - [endpoint-agent/README.md](endpoint-agent/README.md) — osquery pack deployment, Wazuh ingestion, future native agent
 - docs/future-deployment.md — planned Docker/Kubernetes/Redis architecture; not written yet (Phase 11)

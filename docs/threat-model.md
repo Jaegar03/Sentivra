@@ -13,7 +13,8 @@ Methodology: STRIDE per trust boundary, plus an explicit "what this does NOT det
    │  Gmail Pub/Sub push │ Telegram webhook │ WhatsApp webhook │ public demo endpoints
    ▼
 [Boundary A — Ingress]  ──────────────────────────────────────────
-   │  FastAPI request handlers, webhook signature verification
+   │  body-size limit → rate limit → OAuth2 bearer token + scope → FastAPI handlers
+   │  (webhooks, when built: provider signature verification instead of a bearer token)
    ▼
 [Trusted-but-limited: Sentivra backend process]
    │  detectors, risk engine, ML inference
@@ -40,13 +41,37 @@ Methodology: STRIDE per trust boundary, plus an explicit "what this does NOT det
 |---|---|---|---|
 | Forged webhook claiming to be Meta/Telegram | Spoofing | HMAC-SHA256 verification over raw body (WhatsApp `X-Hub-Signature-256`), Telegram secret-token header check | `backend/app/security/webhooks.py`, per-integration `webhook.py` |
 | Replayed/old webhook payload | Spoofing/Tampering | Timestamp/nonce freshness check where the provider supplies one; idempotent event_id dedup at the repository layer | `EventRepository.create_if_absent` |
-| Oversized or decompression-bomb file upload | DoS | Hard upload size cap, nested-archive depth/size limits, streaming hash computation before full extraction | `backend/app/security/uploads.py` |
+| Unauthenticated use of the API (reading alerts, running analyses, changing alert status) | Spoofing/Info disclosure/EoP | OAuth2 client-credentials. Every `/api/` route needs a bearer token except the token endpoint and the liveness probe. A test walks the OpenAPI schema and fails on any route that answers without a token | `backend/app/security/auth.py`, `backend/tests/test_auth.py` |
+| A compromised or over-trusted client doing more than its job | EoP | Per-route scopes (`read`, `analyze`, `ingest`, `alerts:write`). An ingest-only agent can't read alerts back. Scopes are re-checked against the client's configuration on every request | `backend/app/security/auth.py` |
+| Forged or tampered token (`alg: none`, re-signed, edited scope claim) | Spoofing/Tampering | HS256 with the algorithm pinned at verification; `exp`, `iat`, `iss` and `sub` required; tokens for unknown clients rejected | `backend/app/security/auth.py` |
+| Signing key that anyone can read (the old default, or the `.env.example` placeholder copied as-is) | Spoofing | Unset, repo-published and too-short (< 256-bit) keys are never used. Development generates a random per-install key in `.sentivra/`; other environments refuse to start | `backend/app/core/config.py`, `backend/app/security/auth.py` |
+| Guessing or enumerating client secrets | Spoofing | 256-bit random secrets, stored only as SHA-256 hashes and compared in constant time; unknown IDs are compared against a dummy hash too, and wrong-ID and wrong-secret get the same response; the token endpoint has its own 10/min per-IP budget | `backend/app/security/auth.py`, `backend/app/api/auth.py`, `backend/app/security/rate_limit.py` |
+| Cross-site request forgery from a page the operator visits | Tampering | Tokens travel in the `Authorization` header, never in cookies, so the browser doesn't attach them to cross-site requests; CORS never allows credentials | `backend/app/main.py`, `frontend/lib/api.ts` |
+| Script injection in the dashboard stealing the stored token | Info disclosure | React escaping (no raw HTML from data); the token is in `sessionStorage` (per tab, gone when the tab closes), never `localStorage`, and the secret is never stored; the dashboard's CSP `connect-src`/`img-src` allow only its own origin and the API, so injected code can't `fetch` or beacon the token elsewhere (verified in a browser) | `frontend/lib/auth.ts`, `frontend/next.config.ts` |
+| Oversized request body, including chunked bodies with no `Content-Length` | DoS | Limits are enforced while the body is received, before parsing: 1 MB for JSON, the upload cap plus multipart framing on the four upload routes. A declared oversize gets `413` before any read | `backend/app/security/body_limit.py` |
+| Decompression-bomb file upload | DoS | Nested-archive depth, entry-count and uncompressed-size limits | `backend/app/security/uploads.py` |
 | SSRF via a URL-analysis request fetching attacker-controlled internal address | Tampering/Info disclosure | `URLDetector`/any outbound fetch goes through an SSRF-guarded HTTP client: DNS-resolves and rejects RFC1918/loopback/link-local targets before connecting, no redirects followed blindly | `backend/app/security/ssrf_guard.py` |
-| Path traversal via filename in upload/attachment metadata | Tampering | Filenames never used as filesystem paths directly; storage keyed by SHA-256, original name kept as metadata only | `backend/app/services/file_storage.py` |
+| Path traversal via filename in upload/attachment metadata | Tampering | Uploaded bytes are never written to disk: they're analyzed in memory and discarded, and the original filename is kept only as metadata, never used as a path | `backend/app/api/analyze.py`, `backend/app/security/uploads.py` |
 | Command/argument injection when shelling out to Suricata/ClamAV/YARA CLI | Tampering/EoP | No shell=True, argument lists only, no user input concatenated into a command string; engine subprocess run with minimal env | `backend/app/detectors/{yara,clamav}_detector.py` |
-| Abusive request volume against `/analyze/*` or webhooks | DoS | Rate limiting (per-IP and per-API-key) at the ASGI middleware layer | `backend/app/security/rate_limit.py` |
-| Cross-origin misuse of the API from an unintended web origin | Tampering | Explicit CORS allowlist, no wildcard `*` with credentials | `backend/app/core/config.py` |
+| Abusive request volume against `/analyze/*` or webhooks | DoS | Per-IP rate limiting at the ASGI layer (300/min for the API, 10/min for the token endpoint; `429` with `Retry-After`) | `backend/app/security/rate_limit.py` |
+| Cross-origin misuse of the API from an unintended web origin | Tampering | Explicit CORS allowlist, never a wildcard; credentials never allowed; only `Authorization` and `Content-Type` request headers | `backend/app/core/config.py`, `backend/app/main.py` |
+| API responses cached, framed or rendered as a page | Info disclosure | `Cache-Control: no-store` and `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` on every API response, plus `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`; interactive docs only in development | `backend/app/security/headers.py`, `backend/app/main.py` |
 | Malicious file executed accidentally during analysis | EoP | Files are **never executed** — only parsed (hash/magic-bytes/MIME/static structure); no sandboxed detonation in this phase | `backend/app/detectors/malware_detector.py` |
+
+#### Boundary A: what the API hardening does not cover yet
+
+These are known gaps in this build, not solved problems:
+
+- **No TLS in the app.** The backend serves plain HTTP on localhost. Any deployment beyond localhost must terminate TLS in front of it; bearer tokens and client secrets must never cross a network in clear text.
+- **No per-token revocation.** A leaked token stays valid until it expires (default 1 hour). The levers are:
+  - remove the client, or rotate its secret, and restart;
+  - rotate `SENTIVRA_SECRET_KEY` (or delete `.sentivra/signing.key`), which invalidates every token at once.
+- **Rate limits live in one process.** Buckets are kept in memory: they reset on restart and aren't shared between workers.
+- **`X-Forwarded-For` is ignored.** That's deliberate, since an unauthenticated header can't be trusted. The consequence is that behind a reverse proxy, every client shares the proxy's per-IP bucket.
+- **Clients, not people.** There are no user accounts or roles. Whoever holds the `dashboard` secret has all four scopes, and the audit log records the client ID, not a person.
+- **The development bootstrap prints a secret to the log.** The first-start `dashboard` secret appears once in the backend's log output. Anyone who can read that log can use it. Outside development there's no bootstrap: clients must be configured explicitly.
+- **The dashboard's CSP allows inline scripts.** Statically rendered Next.js pages inline their RSC payload, so `script-src` includes `'unsafe-inline'`. The policy's value is in `connect-src`, `img-src`, `frame-ancestors`, `base-uri` and `object-src`, not in blocking injected script outright. A nonce-based policy would need every page rendered per request.
+- **Webhook ingress doesn't exist yet.** Gmail, Telegram and WhatsApp will authenticate with provider signatures rather than bearer tokens. Their threats are listed in §3, but those mitigations are designs, not code, until Phase 7. The WhatsApp HMAC helper exists and is unit-tested.
 
 ### Boundary B — Persistence
 

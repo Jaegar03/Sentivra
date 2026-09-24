@@ -19,6 +19,17 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 # backend/app/core/config.py -> repo root is three parents up
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
+# Signing secrets that appear in this repository (old defaults, template
+# placeholders). Anyone can read them, so a token signed with one proves nothing.
+PUBLISHED_SECRETS = frozenset({
+    "insecure-development-key-override-me",
+    "changeme-generate-a-real-secret",
+    "changeme",
+})
+# RFC 7518 §3.2: an HS256 key must be at least 256 bits. 32 characters of
+# token_urlsafe output carry more than that.
+MIN_SECRET_KEY_CHARS = 32
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -29,7 +40,9 @@ class Settings(BaseSettings):
     )
 
     env: str = "development"
-    secret_key: str = "insecure-development-key-override-me"
+    # JWT signing secret. Leave unset in development: a random per-install key
+    # is generated in state_dir. Required outside development.
+    secret_key: str = ""
     database_url: str = f"sqlite:///{REPO_ROOT / 'sentivra.db'}"
     # Browsers treat localhost and 127.0.0.1 as different origins, so both
     # local spellings of the dashboard are allowed by default.
@@ -39,7 +52,26 @@ class Settings(BaseSettings):
     # health polling), so 60/min was reachable by one person clicking around.
     rate_limit_per_minute: int = 300
 
-    @field_validator("yara_rules_dir", "models_dir", "rules_dir", mode="after")
+    # ---- API authentication (OAuth2 client-credentials; app.security.auth) ----
+    # "client_id:secret:scope scope;client_id2:secret2:scope" or a JSON list of
+    # {"client_id", "client_secret", "scopes"}. When empty in development, a
+    # dashboard client is generated on first start (see state_dir).
+    oauth_clients: str = ""
+    token_ttl_s: int = 3600
+    # The token endpoint gets a much tighter limit than the rest of the API:
+    # it's the one place a client secret can be guessed.
+    token_rate_limit_per_minute: int = 10
+    # Local, gitignored state: generated signing key and client-secret hashes.
+    state_dir: Path = REPO_ROOT / ".sentivra"
+
+    # Request body caps, enforced while the body is received (before parsing).
+    max_json_bytes: int = 1 * 1024 * 1024
+
+    @property
+    def is_development(self) -> bool:
+        return self.env.lower() in ("development", "dev", "test")
+
+    @field_validator("yara_rules_dir", "models_dir", "rules_dir", "state_dir", mode="after")
     @classmethod
     def _resolve_against_repo(cls, value: Path) -> Path:
         """Relative directories in .env mean "relative to the repo", not to
@@ -115,8 +147,10 @@ class Settings(BaseSettings):
     whatsapp_webhook_verify_token: str = ""
 
     @property
-    def is_demo_secret(self) -> bool:
-        return self.secret_key == "insecure-development-key-override-me"
+    def secret_key_is_unsafe(self) -> bool:
+        """Unset, published in this repo, or too short to be an HS256 key."""
+        key = self.secret_key.strip()
+        return key in PUBLISHED_SECRETS or len(key) < MIN_SECRET_KEY_CHARS
 
 
 @lru_cache

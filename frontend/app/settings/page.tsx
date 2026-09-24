@@ -1,5 +1,6 @@
 "use client";
 
+import { SessionDetails } from "@/components/sentivra/auth-gate";
 import { StatusPill } from "@/components/sentivra/badges";
 import { ErrorState, LoadingBlock, PageHeader } from "@/components/sentivra/states";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,6 +25,7 @@ export default function SettingsPage() {
               <dt className="text-muted-foreground">API base URL</dt><dd className="font-mono text-xs break-all">{API_BASE}</dd>
               <dt className="text-muted-foreground">Environment</dt><dd>{health.data?.environment ?? "…"}</dd>
               <dt className="text-muted-foreground">Database</dt><dd>{health.data ? <StatusPill status={health.data.database === "ok" ? "Available" : "Error"} /> : "…"}</dd>
+              <SessionDetails />
             </dl>
             {health.error ? <ErrorState error={health.error} /> : null}
             <p className="text-xs text-muted-foreground">
@@ -40,7 +42,11 @@ export default function SettingsPage() {
           <CardContent className="space-y-1.5 text-sm text-muted-foreground">
             <p>Runs locally: FastAPI + SQLite and this Next.js app. No Docker, Redis or message queue.</p>
             <p>Detects and explains only. There is no automation or remediation.</p>
-            <p>The API has no authentication yet, so keep it bound to localhost.</p>
+            <p>
+              Every API call needs an OAuth2 access token. The token lives only in this tab and is dropped when it
+              expires or the tab closes.
+            </p>
+            <p>Webhook connectors (Gmail, Telegram, WhatsApp) aren&apos;t built yet. Keep the backend bound to localhost.</p>
           </CardContent>
         </Card>
       </div>
