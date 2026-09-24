@@ -103,6 +103,6 @@
   "domain": "endpoint",
   "name": "fleet_baseline",
   "artifact_filename": "baseline.json",
-  "sha256": "7d558e1aa05a29097f6c4cd80d6eaddbce611c836799ddb8d67b3c1457cf2ff1",
+  "sha256": "d3b5ad7412c301814afbcb2d52c30b378e4083c7c921abf4948638f7429ca96f",
   "evaluation_date": "2026-09-24"
 }

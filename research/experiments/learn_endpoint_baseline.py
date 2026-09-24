@@ -65,7 +65,10 @@ def main() -> None:
     model_dir = MODELS_DIR / "endpoint" / "fleet_baseline"
     model_dir.mkdir(parents=True, exist_ok=True)
     artifact = model_dir / "baseline.json"
-    artifact.write_text(json.dumps(baseline.to_dict(), indent=1, sort_keys=True) + "\n", encoding="utf-8")
+    # newline="\n" so the bytes, and so the pinned SHA-256, are identical on
+    # every OS (text mode on Windows would otherwise write "\r\n").
+    artifact.write_text(json.dumps(baseline.to_dict(), indent=1, sort_keys=True) + "\n", encoding="utf-8",
+                        newline="\n")
     sigma = SigmaDetector()
 
     layers = ("host_rules", "sigma", "auth_rules")
