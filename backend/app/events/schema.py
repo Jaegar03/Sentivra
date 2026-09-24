@@ -1,0 +1,107 @@
+"""The Universal Security Event — every source normalizes into this shape.
+
+See docs/architecture.md §5. Detectors never see a Gmail/Telegram/WhatsApp/
+osquery-specific payload; they only ever see a SecurityEvent. This is what
+lets one PhishingDetector implementation apply, unmodified, to an email, a
+Telegram message, and a WhatsApp message.
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+
+class SecurityEventType(StrEnum):
+    # Integration-sourced
+    GMAIL_MESSAGE = "gmail_message"
+    TELEGRAM_MESSAGE = "telegram_message"
+    WHATSAPP_MESSAGE = "whatsapp_message"
+    # File / endpoint
+    FILE_CREATED = "file_created"
+    FILE_DOWNLOADED = "file_downloaded"
+    PROCESS_STARTED = "process_started"
+    PROCESS_NETWORK_CONNECTION = "process_network_connection"
+    # Network
+    NETWORK_FLOW = "network_flow"
+    DNS_EVENT = "dns_event"
+    # Browser / log / auth
+    BROWSER_URL = "browser_url"
+    SYSTEM_LOG = "system_log"
+    AUTHENTICATION_EVENT = "authentication_event"
+    # Direct analyze-API requests (not tied to an integration/simulation)
+    TEXT_ANALYSIS = "text_analysis"
+    URL_ANALYSIS = "url_analysis"
+    FILE_ANALYSIS = "file_analysis"
+    PROMPT_ANALYSIS = "prompt_analysis"
+    SQL_ANALYSIS = "sql_analysis"
+
+
+class SourceType(StrEnum):
+    """Brief §26: the UI must never present one of these as another."""
+
+    LIVE = "LIVE"
+    SIMULATED = "SIMULATED"
+    DEMO_DATA = "DEMO_DATA"
+
+
+class AttachmentRef(BaseModel):
+    """A reference to file content, never the raw bytes embedded in the
+    event itself — the file pipeline (app.detectors.file) hashes/stores
+    attachments separately and links back by sha256."""
+
+    filename: str
+    declared_mime: str | None = None
+    size_bytes: int | None = None
+    sha256: str | None = None
+
+
+class NetworkContext(BaseModel):
+    src_ip: str | None = None
+    dst_ip: str | None = None
+    src_port: int | None = None
+    dst_port: int | None = None
+    protocol: str | None = None
+    bytes_sent: int | None = None
+    bytes_received: int | None = None
+    packets: int | None = None
+    duration_ms: float | None = None
+    dns_query: str | None = None
+
+
+class ProcessContext(BaseModel):
+    pid: int | None = None
+    parent_pid: int | None = None
+    executable_path: str | None = None
+    command_line: str | None = None
+    executable_sha256: str | None = None
+    user: str | None = None
+
+
+class EventContent(BaseModel):
+    subject: str | None = None
+    body: str | None = None
+    sender: str | None = None
+    recipients: list[str] = Field(default_factory=list)
+    urls: list[str] = Field(default_factory=list)
+    headers: dict[str, str] = Field(default_factory=dict)
+
+
+class SecurityEvent(BaseModel):
+    event_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    event_type: SecurityEventType
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    source: str
+    source_type: SourceType
+    user_id: str | None = None
+    content: EventContent | None = None
+    attachments: list[AttachmentRef] = Field(default_factory=list)
+    network: NetworkContext | None = None
+    process: ProcessContext | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = {"extra": "forbid"}

@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Databases (local demo state — never commit real data)
+*.db
+*.db-journal
+sentivra.db
+
+# Env / secrets
+.env
+.env.local
+*.pem
+*.key
+
+# Node / frontend
+node_modules/
+.next/
+out/
+frontend/.env*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Research artifacts that shouldn't bloat the repo
+research/datasets/*
+!research/datasets/.gitkeep
