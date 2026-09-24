@@ -27,6 +27,7 @@ frontend/.env*.local
 .DS_Store
 Thumbs.db
 
-# Research artifacts that shouldn't bloat the repo
-research/datasets/*
-!research/datasets/.gitkeep
+# Research data: downloaded and generated datasets are reproducible from
+# the scripts in research/datasets/, so the data itself is never committed.
+research/datasets/raw/
+research/datasets/generated/

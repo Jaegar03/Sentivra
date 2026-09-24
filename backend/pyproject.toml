@@ -7,7 +7,6 @@ name = "sentivra-backend"
 version = "0.1.0"
 description = "SENTIVRA — multi-layer cybersecurity detection platform (backend)"
 requires-python = ">=3.11"
-readme = "../README.md"
 license = { text = "Apache-2.0" }
 
 # NOTE: dependencies are added incrementally, phase by phase, on purpose —
@@ -29,6 +28,12 @@ dependencies = [
     # File / malware detection (Phase 3)
     "yara-python>=4.5.0",
     "numpy>=1.26",
+    # Text / URL detection (Phase 4)
+    "scikit-learn>=1.5",   # HashingVectorizer is needed at inference to rebuild features
+    "lightgbm>=4.3",       # URL model; saved in LightGBM's own text format, not pickle
+    "regex>=2024.5",       # pattern rules run with a per-match timeout (ReDoS guard)
+    "tldextract>=5.1",     # registered-domain extraction from the bundled Public Suffix List
+    "pyyaml>=6.0",         # rule packs under detection-rules/ (yaml.safe_load only)
 ]
 
 [project.optional-dependencies]
@@ -36,6 +41,10 @@ dev = [
     "pytest>=8.2",
     "pytest-asyncio>=0.23",
     "ruff>=0.5",
+]
+# Training/evaluation scripts under research/. Not needed to run the backend.
+research = [
+    "pandas>=2.2",
 ]
 
 [tool.setuptools.packages.find]

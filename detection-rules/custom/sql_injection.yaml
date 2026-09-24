@@ -1,0 +1,197 @@
+# SENTIVRA — SQL injection signature pack (read by SQLInjectionDetector).
+#
+# Patterns run case-insensitively against normalized views of the input:
+# repeatedly URL-decoded, HTML-unescaped, NFKC-folded, lowercased, with SQL
+# comments (/**/, /*!50000 ... */) replaced by spaces and whitespace
+# collapsed. So "UN/**/ION%20SeLeCt" is seen as "union select". A rule
+# with `view: raw` runs on the undecoded input instead. That's how
+# evasion markers, which disappear once decoded, get caught.
+#
+# weight: the rule's strength as a standalone signal (0–1). The detector
+# combines weights across rules with a noisy-OR, then fuses the result
+# with the lexical-structure layer and the ML classifier.
+#
+# Signatures are one layer of three. They are tuned to avoid firing on
+# ordinary text that happens to contain SQL words ("select a plan",
+# "Union Station", "O'Brien", "drop me a line"); the tests in
+# backend/tests/test_sql_injection.py pin those false-positive cases down.
+
+rules:
+  # ---- UNION-based ----------------------------------------------------------
+  - id: sqli.union.select
+    category: union_based
+    description: UNION [ALL] SELECT, used to append attacker-chosen rows to a query's result
+    pattern: '\bunion\b(?:\s+(?:all|distinct))?\s*\(?\s*select\b'
+    weight: 0.9
+  - id: sqli.union.null_columns
+    category: union_based
+    description: UNION SELECT with NULL placeholders, the usual way to probe a query's column count
+    pattern: '\bunion\b.{0,40}?\bselect\b\s+(?:null\s*,\s*)+null\b'
+    weight: 0.95
+
+  # ---- Boolean / tautology --------------------------------------------------
+  - id: sqli.tautology.numeric
+    category: boolean_based
+    description: Quote or value followed by OR <n>=<n>, an always-true condition
+    pattern: '(?:[''"\)]|\b\d+)\s*(?:\bor\b|\|\|)\s*\(?\s*(\d+)\s*(?:=|\blike\b)\s*\1\b'
+    weight: 0.85
+  - id: sqli.tautology.string
+    category: boolean_based
+    description: Quote break followed by OR 'x'='x', an always-true string comparison
+    pattern: '[''"]\s*\)?\s*(?:\bor\b|\|\|)\s*\(?\s*([''"])([^''"]{1,20})\1\s*(?:=|\blike\b)\s*\(?\s*\1\2'
+    weight: 0.85
+  - id: sqli.boolean.and_probe
+    category: boolean_based
+    description: Quote or value followed by AND <n>=<n> / AND <n>=<m>, the true/false pair used in blind injection
+    pattern: '(?:[''"\)]|\b\d+)\s*\band\b\s*\(?\s*\d+\s*=\s*\d+'
+    weight: 0.6
+  - id: sqli.boolean.or_true_keyword
+    category: boolean_based
+    description: Quote break followed by OR TRUE / OR NOT FALSE
+    pattern: '[''"]\s*\)?\s*\bor\b\s+(?:not\s+false|true)\b'
+    weight: 0.75
+
+  # ---- Authentication bypass / comment truncation ---------------------------
+  - id: sqli.auth_bypass.comment
+    category: authentication_bypass
+    description: Username followed by a quote and a comment, dropping the rest of the query (e.g. admin'--)
+    pattern: '^\s*[\w.@-]{1,64}\s*[''"]\s*\)?\s*(?:--|#|/\*)'
+    weight: 0.85
+  - id: sqli.comment.after_quote
+    category: comment_truncation
+    description: A quote immediately followed by a SQL comment marker, dropping the rest of the query
+    pattern: '[''"]\s*\)?\s*;?\s*(?:--(?:\s|$)|#|/\*)'
+    weight: 0.55
+
+  # ---- Stacked queries ------------------------------------------------------
+  - id: sqli.stacked.destructive
+    category: stacked_queries
+    description: A semicolon followed by a second SQL statement (DROP/DELETE/INSERT/UPDATE/EXEC/...)
+    pattern: ';\s*(?:drop\s+(?:table|database|user)\b|delete\s+from\b|insert\s+into\b|update\s+[\w.\[\]`"]+\s+set\b|create\s+(?:table|user|database|login)\b|alter\s+(?:table|user)\b|truncate\s+table\b|exec(?:ute)?\s+(?:master\.|xp_|sp_)|declare\s+@|shutdown\b|grant\s+\w+)'
+    weight: 0.95
+
+  # ---- Time-based blind -----------------------------------------------------
+  - id: sqli.time.sleep
+    category: time_based
+    description: SLEEP / PG_SLEEP call, used to infer data from response timing
+    pattern: '\b(?:sleep|pg_sleep)\s*\(\s*\d+(?:\.\d+)?\s*\)'
+    weight: 0.9
+  - id: sqli.time.benchmark
+    category: time_based
+    description: MySQL BENCHMARK(), burning CPU to create a measurable delay
+    pattern: '\bbenchmark\s*\(\s*\d{4,}\s*,'
+    weight: 0.9
+  - id: sqli.time.waitfor
+    category: time_based
+    description: MSSQL WAITFOR DELAY
+    pattern: '\bwaitfor\s+(?:delay|time)\s+[''"]\d'
+    weight: 0.95
+  - id: sqli.time.oracle
+    category: time_based
+    description: Oracle DBMS_LOCK.SLEEP / DBMS_PIPE.RECEIVE_MESSAGE delay primitives
+    pattern: '\bdbms_(?:lock\.sleep|pipe\.receive_message)\s*\('
+    weight: 0.9
+
+  # ---- Error-based ----------------------------------------------------------
+  - id: sqli.error.xml_functions
+    category: error_based
+    description: MySQL EXTRACTVALUE / UPDATEXML, which put query results into an error message
+    pattern: '\b(?:extractvalue|updatexml)\s*\('
+    weight: 0.85
+  - id: sqli.error.convert_int
+    category: error_based
+    description: MSSQL CONVERT/CAST to int on a subquery, which puts query results into a type error
+    pattern: '\b(?:convert\s*\(\s*int\s*,|cast\s*\(\s*\(?\s*select\b)'
+    weight: 0.8
+  - id: sqli.error.floor_rand
+    category: error_based
+    description: FLOOR(RAND(0)*2) duplicate-key trick for error-based extraction
+    pattern: '\bfloor\s*\(\s*rand\s*\(\s*\d*\s*\)\s*\*\s*2\s*\)'
+    weight: 0.9
+  - id: sqli.error.oracle
+    category: error_based
+    description: Oracle UTL_INADDR / CTXSYS functions used for error-based extraction
+    pattern: '\b(?:utl_inaddr\.get_host_(?:name|address)|ctxsys\.drithsx\.sn)\s*\('
+    weight: 0.9
+
+  # ---- Blind inference / subqueries -----------------------------------------
+  - id: sqli.blind.substring_subquery
+    category: blind_inference
+    description: SUBSTRING/ASCII/ORD over a subquery, extracting data one character at a time
+    pattern: '\b(?:substring|substr|mid|ascii|ord)\s*\(\s*\(?\s*select\b'
+    weight: 0.9
+  - id: sqli.blind.ascii_substring
+    category: blind_inference
+    description: ASCII(SUBSTRING(...)) character-by-character comparison
+    pattern: '\b(?:ascii|ord)\s*\(\s*(?:substring|substr|mid)\s*\('
+    weight: 0.85
+  - id: sqli.subquery.after_quote
+    category: boolean_based
+    description: Quote break followed by AND/OR and a subquery
+    pattern: '[''"]\s*\)?\s*\b(?:and|or)\b\s*\(\s*select\b'
+    weight: 0.85
+  - id: sqli.conditional.if_select
+    category: blind_inference
+    description: IF/IIF/CASE WHEN wrapping a subquery or a delay
+    pattern: '\b(?:iif?\s*\(\s*\(?\s*select\b|case\s+when\b.{0,80}?\bthen\b.{0,40}?\b(?:sleep|pg_sleep|benchmark)\b)'
+    weight: 0.8
+
+  # ---- Enumeration ----------------------------------------------------------
+  - id: sqli.enum.schema_tables
+    category: schema_enumeration
+    description: References to database catalog tables (information_schema, sysobjects, sqlite_master, ...)
+    pattern: '\b(?:information_schema\s*\.\s*\w+|sysobjects|syscolumns|sys\s*\.\s*(?:tables|columns|objects|databases)|mysql\s*\.\s*user|all_tables|all_tab_columns|user_tables|sqlite_master|pg_catalog\s*\.\s*\w+|pg_shadow)\b'
+    weight: 0.75
+  - id: sqli.enum.fingerprint_functions
+    category: schema_enumeration
+    description: Database fingerprinting functions and variables (@@version, version(), database(), current_user)
+    pattern: '(?:@@(?:version|datadir|hostname|servername)\b|\b(?:version|database|schema|user|current_user|system_user|session_user)\s*\(\s*\))'
+    weight: 0.55
+  - id: sqli.enum.order_by_probe
+    category: schema_enumeration
+    description: ORDER BY <n> after a quote or at the end of input, probing a query's column count
+    pattern: '(?:[''"]\s*\)?\s*\border\s+by\s+\d+\b|\border\s+by\s+\d+\s*(?:--|#))'
+    weight: 0.65
+  - id: sqli.enum.group_having
+    category: error_based
+    description: GROUP BY ... HAVING 1=1, the MSSQL trick that leaks column names through errors
+    pattern: '\bgroup\s+by\b.{0,60}?\bhaving\b\s+\d+\s*=\s*\d+'
+    weight: 0.8
+
+  # ---- File / command access ------------------------------------------------
+  - id: sqli.file.read_write
+    category: file_or_command_access
+    description: Reading or writing server files, or running OS commands, through SQL
+    pattern: '\b(?:load_file\s*\(|into\s+(?:out|dump)file\b|xp_cmdshell\b|sp_oacreate\b|openrowset\s*\(|utl_http\.request\b|copy\s+\w+\s+(?:from|to)\s+program\b)'
+    weight: 0.95
+
+  # ---- Obfuscation / encoding markers ---------------------------------------
+  - id: sqli.obfuscation.char_function
+    category: obfuscated
+    description: String assembled from CHAR()/CHR() codes, a way to avoid writing quoted literals
+    pattern: '\b(?:char|chr)\s*\(\s*\d{2,3}\s*(?:,\s*\d{2,3}\s*){2,}\)|\bchr\s*\(\s*\d+\s*\)\s*\|\|\s*chr\s*\('
+    weight: 0.6
+  - id: sqli.obfuscation.hex_literal_compare
+    category: obfuscated
+    description: Comparison against a hex string literal (e.g. =0x61646d696e for 'admin')
+    pattern: '(?:=|\blike\b)\s*0x[0-9a-f]{6,}\b'
+    weight: 0.5
+  - id: sqli.obfuscation.mysql_version_comment
+    category: obfuscated
+    description: MySQL executable comment /*!50000 ... */, used to hide keywords from filters
+    pattern: '/\*!\d{0,5}'
+    weight: 0.7
+    view: raw
+  - id: sqli.obfuscation.inline_comment_keyword
+    category: obfuscated
+    description: SQL keyword split by an inline comment (UN/**/ION, SEL/**/ECT)
+    pattern: '(?:un|uni|unio)/\*.*?\*/(?:ion|on|n)|(?:sel|se|sele|selec)/\*.*?\*/(?:ect|lect|ct|t)'
+    weight: 0.8
+    view: raw
+
+  # ---- NoSQL operator injection (adjacent; same input surfaces) ------------
+  - id: sqli.nosql.operator
+    category: nosql_operator_injection
+    description: MongoDB-style query operator smuggled into a value ({"$ne": ...}, [$gt]=)
+    pattern: '(?:\{\s*["'']?\$(?:ne|gt|gte|lt|lte|regex|where|nin|exists)["'']?\s*:|\[\$(?:ne|gt|gte|lt|lte|regex|nin)\]\s*=)'
+    weight: 0.65

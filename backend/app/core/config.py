@@ -44,11 +44,26 @@ class Settings(BaseSettings):
     # Model registry root
     models_dir: Path = REPO_ROOT / "models"
 
+    # Rule packs (YARA, Sigma, custom text/URL rules) — kept out of app code
+    rules_dir: Path = REPO_ROOT / "detection-rules"
+
     # Upload limits (security §29)
     max_upload_bytes: int = 50 * 1024 * 1024  # 50 MB
     max_archive_entries: int = 2000
     max_archive_depth: int = 4
     max_archive_uncompressed_bytes: int = 500 * 1024 * 1024  # decompression-bomb cap
+
+    # Text analysis limits. Inputs longer than this are rejected by the API,
+    # and every rule regex runs with a per-match timeout, so no single input
+    # can pin a worker on a pathological pattern.
+    max_text_chars: int = 100_000
+    regex_timeout_s: float = 0.05
+
+    # Opt-in URL enrichment (redirect chain, TLS certificate, RDAP domain
+    # age). Off unless a request asks for it: fetching a phishing URL can
+    # confirm to its operator that the recipient opened the message.
+    url_enrichment_timeout_s: float = 8.0
+    url_enrichment_max_redirects: int = 5
 
     # Gmail (least privilege: gmail.readonly only — see docs/privacy.md)
     gmail_oauth_client_id: str = ""

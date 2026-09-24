@@ -1,0 +1,88 @@
+# SENTIVRA — MITRE ATT&CK / ATLAS mappings used by detectors (brief §31).
+#
+# Every entry below was checked against MITRE's own published data on
+# 2026-09-24:
+#   * ATT&CK Enterprise — technique pages at https://attack.mitre.org/techniques/
+#   * ATLAS v5.6.0       — https://github.com/mitre-atlas/atlas-data (dist/ATLAS.yaml)
+#
+# Prompt-injection techniques are not part of ATT&CK; they live in MITRE
+# ATLAS, the sibling framework for attacks on AI systems. The `source`
+# field says which framework each mapping comes from so an ATLAS ID is
+# never presented as an ATT&CK one.
+#
+# Detectors reference these by key. Findings with no defensible mapping
+# (e.g. a high-entropy file on its own) carry no mapping.
+
+sql_injection:
+  - technique_id: T1190
+    technique_name: Exploit Public-Facing Application
+    tactic: Initial Access
+    source: MITRE ATT&CK Enterprise (verified 2026-09-24)
+
+phishing_message_link:
+  - technique_id: T1566.002
+    technique_name: "Phishing: Spearphishing Link"
+    tactic: Initial Access
+    source: MITRE ATT&CK Enterprise (verified 2026-09-24)
+
+phishing_message_attachment:
+  - technique_id: T1566.001
+    technique_name: "Phishing: Spearphishing Attachment"
+    tactic: Initial Access
+    source: MITRE ATT&CK Enterprise (verified 2026-09-24)
+
+# Telegram / WhatsApp: ATT&CK models phishing through messaging and social
+# services as its own sub-technique.
+phishing_via_service:
+  - technique_id: T1566.003
+    technique_name: "Phishing: Spearphishing via Service"
+    tactic: Initial Access
+    source: MITRE ATT&CK Enterprise (verified 2026-09-24)
+
+phishing_generic:
+  - technique_id: T1566
+    technique_name: Phishing
+    tactic: Initial Access
+    source: MITRE ATT&CK Enterprise (verified 2026-09-24)
+
+malicious_link:
+  - technique_id: T1204.001
+    technique_name: "User Execution: Malicious Link"
+    tactic: Execution
+    source: MITRE ATT&CK Enterprise (verified 2026-09-24)
+
+prompt_injection_direct:
+  - technique_id: AML.T0051.000
+    technique_name: "LLM Prompt Injection: Direct"
+    tactic: Execution
+    source: MITRE ATLAS v5.6.0
+
+prompt_injection_indirect:
+  - technique_id: AML.T0051.001
+    technique_name: "LLM Prompt Injection: Indirect"
+    tactic: Execution
+    source: MITRE ATLAS v5.6.0
+
+llm_jailbreak:
+  - technique_id: AML.T0054
+    technique_name: LLM Jailbreak
+    tactic: Privilege Escalation, Defense Evasion
+    source: MITRE ATLAS v5.6.0
+
+llm_system_prompt_extraction:
+  - technique_id: AML.T0056
+    technique_name: Extract LLM System Prompt
+    tactic: Exfiltration
+    source: MITRE ATLAS v5.6.0
+
+llm_data_leakage:
+  - technique_id: AML.T0057
+    technique_name: LLM Data Leakage
+    tactic: Exfiltration
+    source: MITRE ATLAS v5.6.0
+
+ai_agent_tool_invocation:
+  - technique_id: AML.T0053
+    technique_name: AI Agent Tool Invocation
+    tactic: Execution, Privilege Escalation
+    source: MITRE ATLAS v5.6.0
