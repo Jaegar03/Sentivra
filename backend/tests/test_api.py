@@ -3,6 +3,8 @@ real SQLite (temp file, see conftest.py), real YARA compilation."""
 
 from __future__ import annotations
 
+import json
+
 EICAR = (
     "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
 ).encode("ascii")
@@ -123,5 +125,6 @@ def test_metrics_endpoint_has_no_fake_ml_accuracy(app_client):
     resp = app_client.get("/api/v1/metrics")
     assert resp.status_code == 200
     body = resp.json()
-    assert "events_total" in body
+    assert "events" in body["totals"]
+    assert "accuracy" not in json.dumps(body).lower()
     assert "note" in body

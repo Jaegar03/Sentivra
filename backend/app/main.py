@@ -17,11 +17,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import (
     alerts,
     analyze,
+    audit,
     detectors,
     endpoint,
     events,
     health,
+    integrations,
     logs,
+    metrics,
     models,
     network,
     rules,
@@ -91,7 +94,7 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=True,
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "PATCH"],
         allow_headers=["*"],
     )
 
@@ -105,6 +108,9 @@ def create_app() -> FastAPI:
     app.include_router(endpoint.router)
     app.include_router(logs.router)
     app.include_router(rules.router)
+    app.include_router(metrics.router)
+    app.include_router(audit.router)
+    app.include_router(integrations.router)
 
     return app
 

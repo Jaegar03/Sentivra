@@ -1,4 +1,4 @@
-"""GET /api/v1/health and GET /api/v1/metrics.
+"""GET /api/v1/health (metrics moved to app.api.metrics).
 
 Health reports the *real* state of every optional engine (brief §32 —
 "ClamAV: Available / Not Configured" must be truthful). Metrics reports
@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db, get_detector_registry
 from app.core.config import get_settings
 from app.detectors.registry import DetectorRegistry
-from app.models.orm import AlertORM, EventORM
+from app.models.orm import EventORM
 
 router = APIRouter(prefix="/api/v1", tags=["system"])
 
@@ -61,26 +61,4 @@ async def health(
         "environment": settings.env,
         "database": "ok" if db_ok else "unreachable",
         "engines": engines,
-    }
-
-
-@router.get("/metrics")
-async def metrics(db: Session = Depends(get_db)) -> dict:
-    event_count = db.execute(select(func.count()).select_from(EventORM)).scalar_one()
-    alert_count = db.execute(select(func.count()).select_from(AlertORM)).scalar_one()
-    severity_counts = dict(
-        db.execute(
-            select(AlertORM.severity, func.count()).group_by(AlertORM.severity)
-        ).all()
-    )
-    return {
-        "events_total": event_count,
-        "alerts_total": alert_count,
-        "alerts_by_severity": severity_counts,
-        "note": (
-            "Operational counters only. Model evaluation metrics (precision/recall/"
-            "F1/ROC-AUC) are reported per-model via GET /api/v1/models and "
-            "docs/model-card.md, each tied to a dataset and evaluation date — "
-            "never as an unqualified accuracy figure (brief §33)."
-        ),
     }

@@ -40,6 +40,16 @@ class EventRepository:
     def get(self, event_id: str) -> EventORM | None:
         return self._db.get(EventORM, event_id)
 
+    def summaries(self, event_ids: list[str]) -> dict[str, dict]:
+        """Source, source type and event type for each id, from the indexed
+        columns only (no JSON parsing), for annotating alert lists."""
+        if not event_ids:
+            return {}
+        stmt = select(EventORM.event_id, EventORM.source, EventORM.source_type, EventORM.event_type).where(
+            EventORM.event_id.in_(set(event_ids)))
+        return {r.event_id: {"source": r.source, "source_type": r.source_type, "event_type": r.event_type}
+                for r in self._db.execute(stmt)}
+
     def list_recent(self, limit: int = 50, offset: int = 0) -> list[EventORM]:
         stmt = (
             select(EventORM)
