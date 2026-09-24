@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
 
-ArtifactFormat = Literal["linear_text_npz", "lightgbm_text", "onnx", "joblib"]
+ArtifactFormat = Literal["linear_text_npz", "lightgbm_text", "onnx", "json_baseline", "joblib"]
 
 
 class DatasetRef(BaseModel):

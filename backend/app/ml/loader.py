@@ -88,6 +88,10 @@ class ModelLoader:
             import onnxruntime as ort
 
             return ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+        if fmt == "json_baseline":
+            import json
+
+            return json.loads(path.read_text(encoding="utf-8"))
         if fmt == "joblib":
             import joblib
 

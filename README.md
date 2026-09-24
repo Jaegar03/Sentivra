@@ -17,7 +17,7 @@ Built in phases (see [docs/architecture.md](docs/architecture.md) § Implementat
 | 3 | File detection — hashing, magic bytes, entropy, YARA, ClamAV | ✅ Done |
 | 4 | SQL injection, phishing/URL, prompt injection detectors | 🔄 Groundwork only: rule packs, Unicode/decoding layers, SQL lexer, pickle-free model format, datasets fetched. Detectors not wired yet |
 | 5 | Network anomaly detection: behavior rules, statistical, Isolation Forest, autoencoder, classifier; CSV/PCAP upload | ✅ Done. Models trained on **synthetic** data; see [docs/model-card.md](docs/model-card.md) |
-| 6 | Endpoint-event simulation | ⏳ Planned |
+| 6 | Endpoint telemetry: osquery pack + normalizer, simulator, Sigma engine, host behavior rules, auth/log rules, Wazuh alert ingestion | ✅ Done, rules only: no endpoint ML model in this version. See [endpoint-agent/README.md](endpoint-agent/README.md) |
 | 7 | Gmail / Telegram / WhatsApp Business connectors | ⏳ Planned |
 | 8 | Unified risk engine polish, alert management | ⏳ Partially done (engine exists, §7 of architecture.md) |
 | 9 | Next.js SOC dashboard | ⏳ Planned |
@@ -69,6 +69,22 @@ curl -X POST http://localhost:8000/api/v1/network/analyze -F "file=@capture.pcap
 ```
 
 The response lists which behavior rules fired (with verified ATT&CK mappings where one applies), which flows at least two model layers agreed on, and why. Uploaded traffic is parsed in memory and discarded after the request.
+
+## Try the endpoint and log detectors
+
+```bash
+# Simulated fleet as osquery telemetry (tagged SIMULATED in the response)
+curl -X POST http://localhost:8000/api/v1/endpoint/demo
+
+# Real osquery results from the pack in endpoint-agent/osquery/
+curl -X POST http://localhost:8000/api/v1/endpoint/osquery -F "file=@osqueryd.results.log"
+
+# auth.log / secure, Windows Security events as JSON lines, or Wazuh alerts.json
+curl -X POST http://localhost:8000/api/v1/logs/analyze -F "file=@auth.log"
+
+# Which rule packs are loaded, and which Sigma rules couldn't be supported
+curl http://localhost:8000/api/v1/rules
+```
 
 ## Documentation
 

@@ -5,3 +5,4 @@
 models/**/*.onnx binary
 models/**/*.lgb.txt binary
 models/**/*.npz binary
+models/**/baseline.json binary

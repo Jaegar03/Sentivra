@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     max_network_flows: int = 200_000
     max_pcap_packets: int = 500_000
 
+    # Endpoint telemetry (osquery results) and log uploads.
+    max_endpoint_rows: int = 200_000
+    max_log_lines: int = 200_000
+
     # Opt-in URL enrichment (redirect chain, TLS certificate, RDAP domain
     # age). Off unless a request asks for it: fetching a phishing URL can
     # confirm to its operator that the recipient opened the message.

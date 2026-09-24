@@ -157,7 +157,12 @@ def _row_event(kind: str, row: dict, envelope: dict, source_type: SourceType) ->
                             "sha256": row.get("sha256") or None}},
         )
     if kind.startswith("persistence:"):
-        target = row.get("path") or row.get("action") or row.get("command") or ""
+        # Which column holds the program that will run differs per table:
+        # scheduled_tasks.path is the task's location in the Task Scheduler
+        # library ("\MyTask"); the program is in `action`. For startup_items
+        # and services it's `path`; for crontab it's `command`.
+        target_column = {"persistence:scheduled_task": "action", "persistence:cron": "command"}.get(kind, "path")
+        target = row.get(target_column) or ""
         return event(
             SecurityEventType.PERSISTENCE_ITEM,
             extra={"persistence": {"kind": kind.split(":", 1)[1], "name": row.get("name") or row.get("event"),

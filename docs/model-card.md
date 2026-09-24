@@ -11,6 +11,8 @@ Every number in this document comes from `research/evaluation/<domain>/report.js
 | Network: Isolation Forest (+ statistical baseline) | `models/network/isolation_forest/` | Trained, v0.1.0 | Synthetic flows (demo data) |
 | Network: autoencoder | `models/network/autoencoder/` | Trained, v0.1.0 | Synthetic flows (demo data) |
 | Network: supervised classifier | `models/network/classifier/` | Trained, v0.1.0 | Synthetic flows (demo data) |
+| Endpoint fleet baseline (for host rules; not an ML model) | `models/endpoint/fleet_baseline/` | Learned, v0.1.0 | Simulated endpoint fleet (benign only) |
+| Endpoint behavioral Isolation Forest | — | **Not implemented** in this version | — |
 | Phishing URL model | `models/phishing/url_model/` | **Not trained** | Dataset downloaded (PhiUSIIL, CC BY 4.0); see its dataset notes below |
 | Prompt injection classifier | `models/prompt/prompt_injection/` | **Not trained** | Dataset downloaded (deepset/prompt-injections, Apache-2.0) |
 | SQL injection classifier | `models/sql_injection/classifier/` | **Not trained** | SecLists SQLi lists downloaded (MIT) as positives; no benign corpus chosen yet |
@@ -89,6 +91,8 @@ A flow's fused score is the noisy-OR of the weights of the layers that fired. Th
 
 At that cut **no layer can flag a flow alone**. Even the classifier (0.6) needs a second layer to agree. Behavior rules run separately over the batch and can flag the flows they cover.
 
+**Batch verdicts and multiple comparisons.** On CALIBRATION, 0.61% of benign flows reach the cut. A perfectly benign batch of 2,400 flows therefore contains about 15 flagged flows by construction. So model evidence only raises a *batch's* severity when the flagged count is significantly higher than that rate predicts (binomial tail p < 0.001, `backend/app/ml/batch_stats.py`). The alert then says so, for example "37 of 2,400 flagged vs ~14.6 expected by chance". Without this check, every benign upload produced a MEDIUM alert; this is recorded as revision 2 in the report. The flow-level metrics below are unaffected by it. A single-flow event that two layers agree on is reported as LOW, a lead to look at.
+
 ### Results on TEST (synthetic)
 
 Flow level: 27,881 flows, 2,281 anomalous.
@@ -139,6 +143,64 @@ backend/.venv/bin/python research/experiments/train_network_models.py       # ma
 ```
 
 The script writes new artifacts, recomputes their SHA-256 into `metadata.json`, and rewrites the report. It is deterministic: the same seeds produce identical models and metrics.
+
+---
+
+## Endpoint: fleet baseline and rule layers (v0.1.0)
+
+**Read this first.** There is **no endpoint ML model** in this version; the brief's behavioral Isolation Forest is not implemented. Endpoint detection comes from three rule layers:
+
+- **Host behavior rules** (`BehavioralAnomalyDetector`, thresholds in `detection-rules/custom/endpoint_rules.yaml`), checked against a learned fleet baseline.
+- **Sigma rules** (`SigmaDetector`, `detection-rules/sigma/`).
+- **Authentication aggregation rules** (`LogDetector`, `detection-rules/custom/auth_rules.yaml`).
+
+Everything below was learned from and measured on **simulated telemetry** from `backend/app/demo/endpoint_sim.py`, so it isn't evidence of real-world performance.
+
+- **Script:** `research/experiments/learn_endpoint_baseline.py`
+- **Report:** `research/evaluation/endpoint/report.json`
+- **Evaluation date:** 2026-09-24
+
+### The baseline
+
+The baseline records what is normal for the fleet: parent/child process pairs, autostart targets, listening ports and file extensions. It was learned from a benign simulated fleet (40 Windows and 8 Linux hosts, 8 hours, seed 401). Paths are lowercased, and the user-name segment is replaced with `<user>` so that a program learned on one user's machine is recognized on another's.
+
+The baseline is a registered artifact (`json_baseline` format, SHA-256-pinned, loaded by `ModelLoader`). The three rules that need it (`new_persistence_user_writable`, `new_listener_untrusted`, `rare_process_lineage`) report themselves unavailable when it's missing, rather than firing on every AppData autostart.
+
+**A real deployment must learn its own baseline from its own fleet.** The committed one describes simulated hosts.
+
+### Results
+
+**Detection.** 5 independent test fleets (seeds 403–443), one episode of each scenario per fleet. An episode counts as detected when some finding covers at least one of its events.
+
+| Scenario | Host rules | Sigma | Auth rules | Any layer |
+|---|---|---|---|---|
+| office_spawns_interpreter | 5/5 | 5/5 | 0/5 | 5/5 |
+| unsigned_from_user_writable | 5/5 | 5/5 | 0/5 | 5/5 |
+| new_persistence_user_writable | 5/5 | 5/5 | 0/5 | 5/5 |
+| auth_password_guessing | 0/5 | 0/5 | 5/5 | 5/5 |
+| auth_password_spraying | 0/5 | 0/5 | 5/5 | 5/5 |
+| mass_file_modification | 5/5 | 0/5 | 0/5 | 5/5 |
+| event_log_cleared | 0/5 | 5/5 | 0/5 | 5/5 |
+| new_listener_user_writable | 5/5 | 5/5 | 0/5 | 5/5 |
+| linux_exec_from_tmp | 5/5 | 5/5 | 0/5 | 5/5 |
+
+**False positives.** Across 10 benign-only fleets (seeds 500–509), each layer raised **0 findings**. That includes the deliberately tricky benign cases in the simulator:
+- signed apps that live in AppData (Teams, VS Code, OneDrive);
+- signed installers run from Downloads;
+- users opening shells;
+- one or two mistyped passwords.
+
+### What the evaluation caught during development
+
+- **An osquery normalizer bug** that would have affected real deployments. The first run detected `new_persistence_user_writable` in only 3 of 5 episodes. In osquery's `scheduled_tasks` table, `path` is the task's location in the Task Scheduler library and `action` is the program it runs. The normalizer was reading `path`. It now reads `action`, and there is a regression test for it.
+- **A noisy lineage rule.** "Parent/child pair never seen before" fired hundreds of times on benign fleets, because every downloaded installer has a unique name. The rule now also requires the child to lack a trusted signature, so signed installers pass and unsigned programs in user folders don't.
+
+### Limitations
+
+- All numbers come from simulated telemetry, where the simulator defines both normal and anomalous behavior, so they are optimistic.
+- osquery's `file_events` have no process ID, so file activity is judged per host, not per process.
+- Sigma coverage is only as good as the loaded rules: 8 starter rules ship. The engine loads any Sigma rule file dropped into `detection-rules/sigma/`, and reports the ones it can't support.
+- No ML-based endpoint anomaly detection in this version.
 
 ---
 

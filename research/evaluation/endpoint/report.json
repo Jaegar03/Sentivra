@@ -1,0 +1,91 @@
+{
+  "version": "0.1.0",
+  "baseline": {
+    "learned_from": {
+      "windows_hosts": 40,
+      "linux_hosts": 8,
+      "hours": 8.0,
+      "seed": 401,
+      "episodes": "none (benign only)"
+    },
+    "sizes": {
+      "lineage": 61,
+      "persistence_targets": 5,
+      "listeners": 3,
+      "file_extensions": 2
+    }
+  },
+  "detection_per_scenario": {
+    "office_spawns_interpreter": {
+      "host_rules": "5/5",
+      "sigma": "5/5",
+      "auth_rules": "0/5",
+      "any_layer": "5/5"
+    },
+    "unsigned_from_user_writable": {
+      "host_rules": "5/5",
+      "sigma": "5/5",
+      "auth_rules": "0/5",
+      "any_layer": "5/5"
+    },
+    "new_persistence_user_writable": {
+      "host_rules": "5/5",
+      "sigma": "5/5",
+      "auth_rules": "0/5",
+      "any_layer": "5/5"
+    },
+    "auth_password_guessing": {
+      "host_rules": "0/5",
+      "sigma": "0/5",
+      "auth_rules": "5/5",
+      "any_layer": "5/5"
+    },
+    "auth_password_spraying": {
+      "host_rules": "0/5",
+      "sigma": "0/5",
+      "auth_rules": "5/5",
+      "any_layer": "5/5"
+    },
+    "mass_file_modification": {
+      "host_rules": "5/5",
+      "sigma": "0/5",
+      "auth_rules": "0/5",
+      "any_layer": "5/5"
+    },
+    "event_log_cleared": {
+      "host_rules": "0/5",
+      "sigma": "5/5",
+      "auth_rules": "0/5",
+      "any_layer": "5/5"
+    },
+    "new_listener_user_writable": {
+      "host_rules": "5/5",
+      "sigma": "5/5",
+      "auth_rules": "0/5",
+      "any_layer": "5/5"
+    },
+    "linux_exec_from_tmp": {
+      "host_rules": "5/5",
+      "sigma": "5/5",
+      "auth_rules": "0/5",
+      "any_layer": "5/5"
+    }
+  },
+  "false_positive_findings_on_benign_fleets": {
+    "fleets": 10,
+    "by_layer": {
+      "host_rules": {},
+      "sigma": {},
+      "auth_rules": {}
+    }
+  },
+  "sigma_rules_loaded": 8,
+  "sigma_rules_unsupported": [],
+  "environment": {
+    "python": "3.14.2",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "numpy": "2.5.3",
+    "scikit-learn": "1.9.1",
+    "lightgbm": "4.7.0"
+  }
+}

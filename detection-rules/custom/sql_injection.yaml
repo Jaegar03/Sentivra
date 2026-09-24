@@ -192,6 +192,6 @@ rules:
   # ---- NoSQL operator injection (adjacent; same input surfaces) ------------
   - id: sqli.nosql.operator
     category: nosql_operator_injection
-    description: MongoDB-style query operator smuggled into a value ({"$ne": ...}, [$gt]=)
+    description: 'MongoDB-style query operator smuggled into a value ({"$ne": ...}, [$gt]=)'
     pattern: '(?:\{\s*["'']?\$(?:ne|gt|gte|lt|lte|regex|where|nin|exists)["'']?\s*:|\[\$(?:ne|gt|gte|lt|lte|regex|nin)\]\s*=)'
     weight: 0.65
