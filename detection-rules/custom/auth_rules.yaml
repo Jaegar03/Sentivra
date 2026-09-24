@@ -1,0 +1,33 @@
+# SENTIVRA — authentication behavior rules (read by LogDetector).
+#
+# These aggregate authentication events (Windows 4624/4625, Linux sshd, osquery
+# `last`) over a sliding window. A handful of mistyped passwords is normal and
+# must not fire; the thresholds sit well above that. Tune them to your
+# environment's lockout policy.
+
+rules:
+  password_guessing:
+    description: Many failed logons for one account from one source
+    mitre: auth_password_guessing
+    window_s: 600
+    min_failures: 10
+    weight: 0.7
+
+  password_spraying:
+    description: One source failing to log on to many different accounts
+    mitre: auth_password_spraying
+    window_s: 900
+    min_distinct_accounts: 8
+    weight: 0.75
+
+  success_after_failures:
+    description: A successful logon from a source that just failed repeatedly, possibly a guessed password
+    mitre: auth_password_guessing
+    window_s: 900
+    min_prior_failures: 10
+    weight: 0.85
+
+  wazuh_alert:
+    description: Alert raised by a Wazuh manager, passed through with Wazuh's own rule level
+    min_level: 7              # Wazuh levels run 0-15; 7+ are "bad word" and above
+    weight_per_level: 0.06    # level 12 -> 0.72, capped at 0.9

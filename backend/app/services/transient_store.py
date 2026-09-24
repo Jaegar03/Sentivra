@@ -49,3 +49,4 @@ class TransientStore:
 
 
 flow_batches = TransientStore()
+event_batches = TransientStore()  # endpoint / log submissions: {"events": [...], "analysis": {...}}

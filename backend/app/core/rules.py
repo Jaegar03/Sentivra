@@ -86,13 +86,64 @@ def compile_pattern_rules(entries: list[dict]) -> list[PatternRule]:
     return rules
 
 
+class UnknownTechnique(ValueError):
+    pass
+
+
+@lru_cache
+def attack_index() -> dict:
+    """ATT&CK techniques from detection-rules/custom/attack_index.json
+    (generated from MITRE's STIX data by scripts/build_attack_index.py)."""
+    path = rules_path("custom", "attack_index.json")
+    if not path.exists():
+        return {"attack_version": None, "techniques": {}}
+    import json
+
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def attack_mapping(technique_id: str, *, via: str | None = None) -> MitreAttackMapping:
+    """Build a mapping for an ATT&CK technique ID from the official index.
+
+    A revoked ID is replaced by the technique ATT&CK says revoked it, and
+    the source records that, so an old tag like T1070.001 in a third-party
+    rule comes out as T1685.005. An ID the index doesn't know raises
+    UnknownTechnique: a mapping is never made up."""
+    index = attack_index()
+    techniques = index["techniques"]
+    tid = technique_id.upper()
+    entry = techniques.get(tid)
+    if entry is None:
+        raise UnknownTechnique(f"{technique_id} is not in ATT&CK v{index['attack_version']}")
+    note = ""
+    if entry.get("revoked_by"):
+        replacement = entry["revoked_by"]
+        note = f"; {tid} was revoked, replaced by {replacement}"
+        tid, entry = replacement, techniques[replacement]
+    source = f"MITRE ATT&CK v{index['attack_version']}"
+    if via:
+        source += f" (via {via})"
+    return MitreAttackMapping(
+        technique_id=tid,
+        technique_name=entry["name"],
+        tactic=", ".join(entry["tactics"]),
+        source=source + note,
+    )
+
+
 @lru_cache
 def _mitre_table() -> dict[str, list[MitreAttackMapping]]:
     path = rules_path("custom", "mitre_mappings.yaml")
     if not path.exists():
         return {}
     raw = load_yaml(path) or {}
-    return {key: [MitreAttackMapping(**m) for m in items] for key, items in raw.items()}
+    table: dict[str, list[MitreAttackMapping]] = {}
+    for key, items in raw.items():
+        table[key] = [
+            attack_mapping(item) if isinstance(item, str) else MitreAttackMapping(**item)
+            for item in items
+        ]
+    return table
 
 
 def mitre_for(*keys: str | None) -> list[MitreAttackMapping]:

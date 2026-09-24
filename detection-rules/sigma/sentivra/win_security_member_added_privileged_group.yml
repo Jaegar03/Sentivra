@@ -1,0 +1,24 @@
+title: Account Added to a Privileged Local Group
+id: 6f1d8c35-2a9e-4b74-9d03-5e8a1c6b2f06
+status: stable
+description: >
+  An account was added to the local Administrators or Remote Desktop Users
+  group (event 4732).
+author: SENTIVRA
+date: 2026-09-24
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4732
+    TargetUserName|contains:
+      - 'Administrators'
+      - 'Remote Desktop Users'
+  condition: selection
+falsepositives:
+  - Planned privilege changes by administrators
+level: medium
+tags:
+  - attack.persistence
+  - attack.t1098

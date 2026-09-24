@@ -1,0 +1,29 @@
+title: Autostart Entry Points Into a User-Writable Folder
+id: 2b7e9f40-6c1a-4d58-8f36-0a9c3e5d7b07
+status: experimental
+description: >
+  A new Run key or startup-folder entry launches a program from a folder
+  the user can write to. Known Microsoft components that legitimately live
+  in the user profile (OneDrive, Teams) are filtered out. Uses Sentivra's
+  persistence_item logsource (see detection-rules/sigma/README.md).
+author: SENTIVRA
+date: 2026-09-24
+logsource:
+  category: persistence_item
+  product: windows
+detection:
+  selection:
+    Kind: startup_item
+    TargetPath|contains:
+      - '\AppData\'
+      - '\Users\Public\'
+      - '\Temp\'
+  filter_known:
+    TargetPath|contains: '\AppData\Local\Microsoft\'
+  condition: selection and not filter_known
+falsepositives:
+  - Legitimate per-user applications that install into AppData
+level: medium
+tags:
+  - attack.persistence
+  - attack.t1547.001

@@ -186,3 +186,14 @@ def test_single_layer_cannot_reach_the_fusion_cut():
         assert fuse([LayerResult(layer, True, 0.0)]) == pytest.approx(weight) and weight < cut
     two = fuse([LayerResult("isolation_forest", True, 0.0), LayerResult("autoencoder", True, 0.0)])
     assert two >= cut
+
+
+# ---- batch significance ---------------------------------------------------------
+
+
+def test_benign_rate_count_is_not_significant_but_a_large_excess_is():
+    from app.ml.batch_stats import excess_flags
+
+    assert not excess_flags(2400, 17, 0.007).significant  # ~ the expected 16.8
+    assert excess_flags(2400, 60, 0.007).significant
+    assert not excess_flags(2400, 0, 0.007).significant

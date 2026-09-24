@@ -1,0 +1,25 @@
+title: Scheduled Task Runs a Program From a User-Writable Folder
+id: 8c3a5e12-4f7d-4b29-a6e8-9d1b0c7f3e08
+status: experimental
+description: >
+  A new scheduled task runs a program from a folder the user can write to.
+  Uses Sentivra's persistence_item logsource (see detection-rules/sigma/README.md).
+author: SENTIVRA
+date: 2026-09-24
+logsource:
+  category: persistence_item
+  product: windows
+detection:
+  selection:
+    Kind: scheduled_task
+    TargetPath|contains:
+      - '\AppData\'
+      - '\Users\Public\'
+      - '\Temp\'
+  condition: selection
+falsepositives:
+  - Per-user updaters that schedule themselves from AppData
+level: medium
+tags:
+  - attack.persistence
+  - attack.t1053.005

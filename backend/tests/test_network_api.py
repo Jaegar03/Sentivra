@@ -54,7 +54,10 @@ def test_benign_csv_upload_is_safe(app_client):
     )
     body = resp.json()
     assert body["network"]["behavior_findings"] == []
-    assert body["risk_assessment"]["severity"] in ("SAFE", "LOW", "MEDIUM")
+    # Some benign flows pass the fusion cut by construction; that alone must
+    # not raise an alert (the multiple-comparisons problem).
+    assert body["network"]["model_flag_significance"]["significant"] is False
+    assert body["risk_assessment"]["severity"] == "SAFE"
 
 
 def test_pcap_upload(app_client):

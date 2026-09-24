@@ -31,6 +31,8 @@ from app.ml.registry import registry
 logger = logging.getLogger("sentivra.network")
 
 DEFAULT_FUSION_CUT = 0.615  # used only if the isolation_forest metadata (which carries it) is missing
+# Without a measured benign flag rate, assume the worst the cut allows (its FPR budget).
+DEFAULT_BENIGN_FLAG_RATE = 0.01
 
 
 @dataclass
@@ -55,6 +57,8 @@ class BatchAnalysis:
     layer_status: dict[str, str]
     fusion_cut: float
     layer_fire_counts: dict[str, int]
+    model_flagged_total: int                    # flows at or above the fusion cut
+    benign_flag_rate: float                     # share of benign calibration flows at or above the cut
 
 
 class NetworkModelSuite:
@@ -62,6 +66,7 @@ class NetworkModelSuite:
         self.layers: dict[str, object] = {}
         self.status: dict[str, str] = {}
         self.fusion_cut = DEFAULT_FUSION_CUT
+        self.benign_flag_rate = DEFAULT_BENIGN_FLAG_RATE
         self._load()
 
     def _load(self) -> None:
@@ -82,7 +87,9 @@ class NetworkModelSuite:
                     pre["statistical_baseline"]["alpha"])
                 self.layers["isolation_forest"] = OnnxAnomalyLayer(
                     "isolation_forest", session, scaling, EmpiricalTail.from_dict(pre["tail"]), pre["alpha"])
-                self.fusion_cut = float(pre.get("fusion", {}).get("cut", DEFAULT_FUSION_CUT))
+                fusion = pre.get("fusion", {})
+                self.fusion_cut = float(fusion.get("cut", DEFAULT_FUSION_CUT))
+                self.benign_flag_rate = float(fusion.get("benign_flag_rate", DEFAULT_BENIGN_FLAG_RATE))
                 self.status["statistical"] = self.status["isolation_forest"] = "Available"
             except (ModelIntegrityError, KeyError) as exc:
                 self.status["isolation_forest"] = self.status["statistical"] = f"Error: {exc}"
@@ -141,6 +148,8 @@ class NetworkModelSuite:
             layer_status=dict(self.status),
             fusion_cut=self.fusion_cut,
             layer_fire_counts=fire_counts,
+            model_flagged_total=sum(1 for v in verdicts if v.fused_score >= self.fusion_cut),
+            benign_flag_rate=self.benign_flag_rate,
         )
 
 

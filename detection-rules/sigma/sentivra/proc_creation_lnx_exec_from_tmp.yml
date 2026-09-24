@@ -1,0 +1,23 @@
+title: Program Executed From a World-Writable Temporary Directory
+id: 7d2a6f31-9e0c-4b85-a1d4-2c6e8f0b3a03
+status: test
+description: >
+  A program ran from /tmp, /var/tmp or /dev/shm. Those locations are
+  writable by every user and are rarely where legitimate binaries live.
+author: SENTIVRA
+date: 2026-09-24
+logsource:
+  category: process_creation
+  product: linux
+detection:
+  selection:
+    Image|startswith:
+      - '/tmp/'
+      - '/var/tmp/'
+      - '/dev/shm/'
+  condition: selection
+falsepositives:
+  - Build systems and test harnesses that compile into /tmp
+level: medium
+tags:
+  - attack.execution

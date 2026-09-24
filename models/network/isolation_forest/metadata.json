@@ -2116,7 +2116,8 @@
     "fusion": {
       "cut": 0.615,
       "selected_on": "calibration split",
-      "max_fpr": 0.01
+      "max_fpr": 0.01,
+      "benign_flag_rate": 0.00609375
     },
     "input": "robust-scaled FEATURE_NAMES, float32"
   },
@@ -2181,6 +2182,6 @@
   "domain": "network",
   "name": "isolation_forest",
   "artifact_filename": "model.onnx",
-  "sha256": "ddaf72ad916a95a7f5166920ea769c6f629b19ef3d5c7f3c3406e497941bec92",
+  "sha256": "1911a6a0a3ba052fc37e2edc7874eca7fd36e0b59662954d90cc1dae94c9f405",
   "evaluation_date": "2026-09-24"
 }

@@ -28,7 +28,8 @@
   "fusion": {
     "cut": 0.615,
     "selected_on": "calibration",
-    "max_fpr": 0.01
+    "max_fpr": 0.01,
+    "benign_flag_rate": 0.00609375
   },
   "revisions": [
     {
@@ -36,6 +37,12 @@
       "change": "fusion cut fixed at 0.4 (any single model layer could flag a flow)",
       "observed_on_test": "fused flow-level FPR 0.0288 vs ~0.01 per layer: the union of layers' false positives",
       "revision": "fusion cut is now selected on the CALIBRATION split as the lowest cut with FPR <= 0.01; no model, feature or threshold was re-tuned on test"
+    },
+    {
+      "run": 2,
+      "change": "batch verdicts counted any model-flagged flow as evidence",
+      "observed_on": "benign-only uploads (not the test split): every 2,400-flow benign batch got a MEDIUM alert, because ~0.7% of benign flows pass the cut by construction",
+      "revision": "model evidence now raises a batch's severity only when the number of flagged flows is significantly above what the calibration benign flag rate predicts (binomial tail p < 0.001). The flow-level metrics in this report are unaffected"
     }
   ],
   "classifier": {
@@ -252,9 +259,9 @@
     "latency": {
       "single_flow_all_layers": {
         "n": 500,
-        "p50_ms": 10.671,
-        "p95_ms": 13.162,
-        "max_ms": 123.245
+        "p50_ms": 11.231,
+        "p95_ms": 13.942,
+        "max_ms": 17.207
       }
     }
   },

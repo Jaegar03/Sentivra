@@ -1,0 +1,19 @@
+title: Local User Account Created
+id: 9a4c2e71-8b3d-4f60-a5e2-1c7d9b0e4a05
+status: stable
+description: A local user account was created (event 4720).
+author: SENTIVRA
+date: 2026-09-24
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4720
+  condition: selection
+falsepositives:
+  - Routine account provisioning by administrators
+level: low
+tags:
+  - attack.persistence
+  - attack.t1136.001

@@ -23,9 +23,12 @@ class SecurityEventType(StrEnum):
     WHATSAPP_MESSAGE = "whatsapp_message"
     # File / endpoint
     FILE_CREATED = "file_created"
+    FILE_MODIFIED = "file_modified"          # updated, renamed or deleted
     FILE_DOWNLOADED = "file_downloaded"
     PROCESS_STARTED = "process_started"
     PROCESS_NETWORK_CONNECTION = "process_network_connection"
+    LISTENING_PORT = "listening_port"
+    PERSISTENCE_ITEM = "persistence_item"    # startup item, scheduled task, service, cron entry
     # Network
     NETWORK_FLOW = "network_flow"
     DNS_EVENT = "dns_event"
@@ -33,6 +36,10 @@ class SecurityEventType(StrEnum):
     BROWSER_URL = "browser_url"
     SYSTEM_LOG = "system_log"
     AUTHENTICATION_EVENT = "authentication_event"
+    # A submission of many events analyzed together (host behavior needs
+    # more than one event to see). The individual events travel with it.
+    ENDPOINT_BATCH = "endpoint_batch"
+    LOG_BATCH = "log_batch"
     # Direct analyze-API requests (not tied to an integration/simulation)
     TEXT_ANALYSIS = "text_analysis"
     URL_ANALYSIS = "url_analysis"
@@ -84,10 +91,14 @@ class NetworkContext(BaseModel):
 class ProcessContext(BaseModel):
     pid: int | None = None
     parent_pid: int | None = None
+    name: str | None = None
     executable_path: str | None = None
     command_line: str | None = None
     executable_sha256: str | None = None
     user: str | None = None
+    parent_name: str | None = None
+    parent_executable_path: str | None = None
+    signed: bool | None = None               # None = signature status unknown, not "unsigned"
 
 
 class EventContent(BaseModel):

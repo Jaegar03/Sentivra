@@ -1,0 +1,27 @@
+title: Executable Started From a Temporary or Public Folder
+id: 0c9e4a57-3d8b-4f1a-b6e2-8a5c7d1e9f02
+status: test
+description: >
+  A program ran directly from a temporary or public directory that any
+  user can write to. Installers and updaters sometimes do this, so on its
+  own it is a lead to review, not proof of compromise.
+author: SENTIVRA
+date: 2026-09-24
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    Image|contains:
+      - '\AppData\Local\Temp\'
+      - '\Users\Public\'
+      - '\Windows\Temp\'
+  filter_signed:
+    Signed: 'true'
+  condition: selection and not filter_signed
+falsepositives:
+  - Unsigned in-house tools or installers extracted to a temp folder
+level: medium
+tags:
+  - attack.execution
+  - attack.t1204.002

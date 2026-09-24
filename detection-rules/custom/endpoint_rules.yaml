@@ -1,0 +1,50 @@
+# SENTIVRA — endpoint behavior rules (read by BehavioralAnomalyDetector).
+#
+# Rules marked `needs_baseline` compare against what the fleet normally does,
+# learned from benign telemetry by research/experiments/train_behavioral_model.py
+# and stored with the behavioral model. Without a trained baseline those
+# rules report themselves unavailable instead of firing on every AppData
+# autostart (OneDrive and Teams legitimately live there).
+#
+# Most of these are indicators, not techniques, and carry no ATT&CK mapping;
+# the persistence rule maps by the kind of persistence found.
+
+rules:
+  unsigned_user_writable_network:
+    description: A program without a trusted signature ran from a user-writable folder and connected to external hosts
+    category: suspicious_execution
+    min_external_connections: 1
+    weight: 0.7
+
+  new_persistence_user_writable:
+    description: A new autostart entry, scheduled task, service or cron job points into a user-writable folder and has not been seen in the fleet baseline
+    category: persistence
+    needs_baseline: true
+    mitre_by_kind:
+      startup_item: persistence_run_key_or_startup_folder
+      scheduled_task: persistence_scheduled_task
+      service: persistence_service
+      cron: persistence_cron
+    weight: 0.65
+
+  new_listener_untrusted:
+    description: A program from a user-writable folder, or without a trusted signature, opened a listening port not seen in the fleet baseline
+    category: suspicious_listener
+    needs_baseline: true
+    weight: 0.6
+
+  mass_file_modification:
+    description: One host modified an unusually large number of files across several folders in a short time
+    category: possible_impact
+    window_s: 120
+    min_files: 200
+    min_directories: 3
+    novel_extension_fraction: 0.5   # share of files with an extension never seen in the baseline
+    weight: 0.5
+    weight_with_novel_extensions: 0.85
+
+  rare_process_lineage:
+    description: A parent/child process pair never seen in the fleet baseline, where the child is an interpreter, or an untrusted program running from a user-writable folder
+    category: rare_lineage
+    needs_baseline: true
+    weight: 0.35

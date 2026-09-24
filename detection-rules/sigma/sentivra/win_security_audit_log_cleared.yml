@@ -1,0 +1,20 @@
+title: Windows Security Audit Log Cleared
+id: 3e8b1d64-5c2f-4a97-8e10-6d4b2a9c7f04
+status: stable
+description: >
+  The Security event log was cleared (event 1102). Clearing it destroys the
+  record of earlier activity, which is why intruders do it.
+author: SENTIVRA
+date: 2026-09-24
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 1102
+  condition: selection
+falsepositives:
+  - Deliberate log rotation or maintenance by an administrator
+level: high
+tags:
+  - attack.t1685.005

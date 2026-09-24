@@ -27,6 +27,7 @@ from app.detectors.network.pcap import looks_like_capture, parse_pcap
 from app.detectors.network.suite import BatchAnalysis
 from app.detectors.registry import DetectorRegistry
 from app.events.schema import SecurityEvent, SecurityEventType, SourceType
+from app.ml.batch_stats import excess_flags
 from app.security.uploads import UploadTooLarge, validate_upload_size
 from app.services.pipeline import run_pipeline
 from app.services.transient_store import flow_batches
@@ -37,9 +38,13 @@ router = APIRouter(prefix="/api/v1/network", tags=["network"])
 def _serialize(analysis: BatchAnalysis | None) -> dict:
     if analysis is None:
         return {"available": False}
+    excess = excess_flags(analysis.flow_count, analysis.model_flagged_total, analysis.benign_flag_rate)
     return {
         "flow_count": analysis.flow_count,
         "fusion_cut": analysis.fusion_cut,
+        "model_flagged_total": analysis.model_flagged_total,
+        "model_flag_significance": {"expected_by_chance": round(excess.expected, 1), "p_value": excess.p_value,
+                                    "significant": excess.significant, "summary": excess.describe()},
         "layer_status": analysis.layer_status,
         "layer_fire_counts": analysis.layer_fire_counts,
         "behavior_findings": [

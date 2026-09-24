@@ -23,6 +23,7 @@ from app.detectors.common import action_for, noisy_or, safe_result, severity_fro
 from app.detectors.network.flow import FlowRecord
 from app.detectors.network.suite import BatchAnalysis, get_suite
 from app.events.schema import SecurityEvent, SecurityEventType
+from app.ml.batch_stats import excess_flags
 from app.schemas.detection import DetectionResult, DetectorCategory, Evidence
 from app.services.transient_store import flow_batches
 
@@ -104,13 +105,19 @@ class NetworkAnomalyDetector(BaseDetector):
             ))
 
         model_flagged = [v for v in analysis.flagged if v.fused_score >= analysis.fusion_cut]
-        if model_flagged:
+        # Some benign flows pass the cut by construction (the calibrated flag
+        # rate). Model evidence only counts toward the verdict when the batch
+        # has significantly more flagged flows than that rate predicts.
+        excess = excess_flags(analysis.flow_count, analysis.model_flagged_total, analysis.benign_flag_rate)
+        if model_flagged and excess.significant:
             strengths.append(max(v.fused_score for v in model_flagged))
+        elif model_flagged and analysis.flow_count == 1:
+            strengths.append(0.2)  # a single flagged flow is a lead to look at, not an incident
+        if model_flagged and (excess.significant or analysis.flow_count == 1):
             evidence.append(Evidence(
                 type="model_consensus",
-                detail=(f"{sum(1 for v in analysis.flagged if v.fused_score >= analysis.fusion_cut)} of "
-                        f"{analysis.flow_count} flows flagged by at least two independent model layers "
-                        f"(fusion cut {analysis.fusion_cut:.3f}, chosen on calibration data)"),
+                detail=(f"Flows at or above the fusion cut {analysis.fusion_cut:.3f} (chosen on calibration "
+                        f"data): {excess.describe()}"),
             ))
             for verdict in model_flagged[:_MAX_EVIDENCE_FLOWS]:
                 f = verdict.flow

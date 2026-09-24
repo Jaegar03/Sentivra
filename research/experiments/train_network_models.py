@@ -79,6 +79,15 @@ REVISIONS = [
         "revision": "fusion cut is now selected on the CALIBRATION split as the lowest cut with "
                     f"FPR <= {FUSION_MAX_FPR}; no model, feature or threshold was re-tuned on test",
     },
+    {
+        "run": 2,
+        "change": "batch verdicts counted any model-flagged flow as evidence",
+        "observed_on": "benign-only uploads (not the test split): every 2,400-flow benign batch got a "
+                       "MEDIUM alert, because ~0.7% of benign flows pass the cut by construction",
+        "revision": "model evidence now raises a batch's severity only when the number of flagged flows "
+                    "is significantly above what the calibration benign flag rate predicts (binomial "
+                    "tail p < 0.001). The flow-level metrics in this report are unaffected",
+    },
 ]
 SCENARIO = {"hosts": 80, "hours": 8.0, "benign_flows_per_host_hour": 40}
 
@@ -177,7 +186,10 @@ def main() -> None:
          <= FUSION_MAX_FPR),
         1.0,
     )
-    print(f"fusion cut chosen on calibration: {fusion_cut:.4f}")
+    # The benign flag rate at that cut is what the detector needs to decide
+    # whether a batch has more flagged flows than chance would produce.
+    benign_flag_rate = float(((ca_fused >= fusion_cut) & (ca_y == 0)).sum() / max((ca_y == 0).sum(), 1))
+    print(f"fusion cut chosen on calibration: {fusion_cut:.4f} (benign flag rate {benign_flag_rate:.4f})")
 
     # ---- TEST: scored once ---------------------------------------------------
     results = {name: layer.score(te_x) for name, layer in layers.items()}
@@ -231,7 +243,8 @@ def main() -> None:
                  "anomalous_flows": {k: int(v[3].sum()) for k, v in splits.items()}},
         "held_out_from_classifier": HELD_OUT,
         "alpha": ALPHA,
-        "fusion": {"cut": fusion_cut, "selected_on": "calibration", "max_fpr": FUSION_MAX_FPR},
+        "fusion": {"cut": fusion_cut, "selected_on": "calibration", "max_fpr": FUSION_MAX_FPR,
+                   "benign_flag_rate": benign_flag_rate},
         "revisions": REVISIONS,
         "classifier": {"threshold": clf_layer.threshold, "platt": [platt_a, platt_b]},
         "onnx_parity_max_abs_diff": {"isolation_forest": float(if_diff), "autoencoder": float(ae_diff)},
@@ -279,7 +292,7 @@ def main() -> None:
         "preprocessing": {"scaling": scaling.to_dict(), "tail": if_layer.tail.to_dict(), "alpha": ALPHA,
                           "statistical_baseline": {"tail": stat_layer.tail.to_dict(), "alpha": ALPHA},
                           "fusion": {"cut": fusion_cut, "selected_on": "calibration split",
-                                     "max_fpr": FUSION_MAX_FPR},
+                                     "max_fpr": FUSION_MAX_FPR, "benign_flag_rate": benign_flag_rate},
                           "input": "robust-scaled FEATURE_NAMES, float32"},
         "threshold": ALPHA, "threshold_policy": "fires when p-value vs benign calibration flows <= alpha",
         "evaluation_metrics": headline("isolation_forest"),

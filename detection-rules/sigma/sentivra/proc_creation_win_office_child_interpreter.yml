@@ -1,0 +1,36 @@
+title: Office Application Starts a Command or Script Interpreter
+id: 5b1f0c2e-7a51-4d7e-9c43-1f0e6c9d2a01
+status: test
+description: >
+  A Microsoft Office application started a command shell or script
+  interpreter. Documents rarely have a legitimate reason to do this; it is
+  a common sign of a malicious macro or embedded object.
+author: SENTIVRA
+date: 2026-09-24
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection_parent:
+    ParentImage|endswith:
+      - '\WINWORD.EXE'
+      - '\EXCEL.EXE'
+      - '\POWERPNT.EXE'
+      - '\OUTLOOK.EXE'
+      - '\MSACCESS.EXE'
+  selection_child:
+    Image|endswith:
+      - '\cmd.exe'
+      - '\powershell.exe'
+      - '\pwsh.exe'
+      - '\wscript.exe'
+      - '\cscript.exe'
+      - '\mshta.exe'
+  condition: all of selection_*
+falsepositives:
+  - Add-ins or line-of-business macros that deliberately call scripts
+level: high
+tags:
+  - attack.execution
+  - attack.t1059
+  - attack.t1204.002
