@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import time
 
 import jwt
@@ -206,6 +207,47 @@ def test_development_bootstrap_stores_only_a_hash(tmp_path, monkeypatch):
     # With no secret configured, a random per-install signing key is generated.
     key = auth.signing_key.__wrapped__()
     assert len(key) >= 48 and (tmp_path / "signing.key").read_text(encoding="utf-8").strip() == key
+
+
+def test_concurrent_first_starts_agree_on_one_key_and_one_client(tmp_path, monkeypatch):
+    # uvicorn --workers N starts N processes that bootstrap at the same time.
+    # They must end up with the same signing key and client, or tokens from
+    # one worker are rejected by the next and the printed secret may not work.
+    import threading
+
+    from app.security import auth
+
+    monkeypatch.setattr(auth, "get_settings", lambda: _settings(tmp_path, env="development", secret_key=""))
+    workers = 8
+    barrier = threading.Barrier(workers)
+    keys, client_sets = [], []
+
+    def start():
+        barrier.wait()
+        keys.append(auth.signing_key.__wrapped__())
+        client_sets.append(auth.load_clients.__wrapped__())
+
+    threads = [threading.Thread(target=start) for _ in range(workers)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    stored = json.loads((tmp_path / "clients.json").read_text(encoding="utf-8"))
+    assert len(set(keys)) == 1 and keys[0] == (tmp_path / "signing.key").read_text(encoding="utf-8").strip()
+    assert {c["dashboard"].secret_sha256 for c in client_sets} == {stored[0]["secret_sha256"]}
+    assert not list(tmp_path.glob(".*.tmp")), "temporary files left behind"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits; Windows uses the directory's ACLs")
+def test_state_files_are_owner_only_from_creation(tmp_path, monkeypatch):
+    from app.security import auth
+
+    monkeypatch.setattr(auth, "get_settings", lambda: _settings(tmp_path, env="development", secret_key=""))
+    auth.signing_key.__wrapped__()
+    auth.load_clients.__wrapped__()
+    for name in ("signing.key", "clients.json"):
+        assert (tmp_path / name).stat().st_mode & 0o077 == 0, name
 
 
 def test_weak_or_unknown_client_config_rejected(tmp_path, monkeypatch):

@@ -2,7 +2,7 @@
 
 **Status:** Phase 1 design document. Written before implementation, per the mandated build order — this is the contract the code in `backend/`, `frontend/`, and `models/` is written against.
 
-**Scope:** current demonstration build only. Everything under [Future Extension Points](#future-extension-points) is explicitly *not* implemented yet — see [docs/future-deployment.md](future-deployment.md) and the automation section below for what changes later and why nothing here blocks that change.
+**Scope:** current demonstration build only. Everything under [Future Extension Points](#11-future-extension-points) is explicitly *not* implemented yet — see [docs/future-deployment.md](future-deployment.md) and [docs/future-automation.md](future-automation.md) for what changes later and why nothing here blocks that change.
 
 ---
 
@@ -13,7 +13,7 @@
 3. **Detectors are independently swappable.** Adding, removing, or retraining a detector must not require touching the API layer, the frontend, or other detectors. Enforced by the `BaseDetector` interface ([§4](#4-detector-layer)) and the `ModelRegistry` ([§6](#6-model-registry)).
 4. **Local-first, no forced infrastructure.** SQLite, in-process detectors, no Docker/Redis/Celery/Kafka in this phase (see [Environment Constraints](#2-environment-constraints)). The seams for that infrastructure exist without requiring it.
 5. **Explainable by construction.** A `DetectionResult` without evidence is treated as a bug, not an edge case — the schema makes `evidence: []` require a non-empty list at the point severity exceeds `LOW`.
-6. **Privacy is a first-class architectural concern**, not a policy bolt-on: raw file bytes and raw message bodies are processed in memory and are not retained by default — only hash + metadata + detection result persist (see [docs/privacy.md](privacy.md)).
+6. **Privacy is a first-class architectural concern**, not a policy bolt-on: raw file bytes and raw message bodies are processed in memory and are not retained by default — only hash + metadata + detection result persist (docs/privacy.md, per-integration detail, is written with the Phase 7 connectors).
 
 ---
 
@@ -23,14 +23,14 @@ This phase runs entirely with `uvicorn` (backend) and `next dev` / `next start` 
 
 | Concern | Current (demo) | Future (see future-deployment.md) |
 |---|---|---|
-| Process model | Single FastAPI process, `asyncio` event loop | Backend + dedicated ML inference container(s) |
-| Database | SQLite file (`sentivra.db`), via SQLAlchemy | PostgreSQL, same SQLAlchemy models |
-| Background work | `asyncio` background tasks / in-process queue | Celery + Redis |
-| Security engines | Detected at startup, called as local subprocess/socket if present | Same engines, containerized as sidecars |
-| Model serving | In-process `ModelLoader` (joblib/ONNX/PyTorch in the API process) | Dedicated ONNX Runtime / Triton inference service |
-| Object storage | Local filesystem (hash-named, size-capped) | S3-compatible object storage |
+| Process model | Single FastAPI process, `asyncio` event loop; network scoring runs in a thread, the other detectors on the loop | Backend + worker(s) + dedicated ML inference service |
+| Database | SQLite file (`sentivra.db`) via SQLAlchemy; tables created at startup, no migrations | PostgreSQL, same SQLAlchemy models, Alembic migrations |
+| Background work | None: every analysis finishes inside its request | Job queue (Celery + Redis) for batch uploads and webhooks |
+| Security engines | YARA in-process (`yara-python`); ClamAV over the clamd socket or TCP if configured; Suricata and Zeek not integrated | ClamAV as a sidecar container; Suricata/Zeek once their log ingestion exists |
+| Model serving | In-process `ModelLoader`: ONNX Runtime, LightGBM text dumps, NPZ and JSON artifacts, all SHA-256 pinned (no pickle/joblib model is committed) | Dedicated ONNX Runtime inference service behind the same `ModelLoader` interface |
+| Raw content | Uploads analyzed in memory and never stored; request-scoped handoff to detectors via `blob_store` / `flow_batches` / `event_batches` | Payload travels with the job, or via short-lived encrypted object storage with TTL and deletion |
 
-The abstraction that makes this swap possible without rewriting the core is the **repository/service pattern**: `backend/app/services/` never talks to SQLite or the filesystem directly outside a small set of adapter classes (`EventRepository`, `AlertRepository`, `ModelStorageAdapter`). Swapping SQLite→PostgreSQL is a connection-string + adapter change; swapping local model files→a remote inference service is a `ModelLoader` backend change. Neither touches detector logic or the API layer.
+The abstraction that makes this swap possible without rewriting the core is the **repository/service pattern**. Persistence goes through `EventRepository` and `AlertRepository` (`backend/app/services/`) and the audit service. Model artifacts are loaded only through `ModelLoader`. Swapping SQLite→PostgreSQL is a connection-string, driver and migration change; swapping local model files→a remote inference service is a second `ModelLoader` backend. Neither touches detector logic or the API layer. The full list of what must change first, with file references, is in [future-deployment.md](future-deployment.md) §3.
 
 ---
 
@@ -276,8 +276,8 @@ Every page that can show simulated/demo/live data renders a `SourceTypeBadge` co
 
 These are **not implemented now**; the architecture reserves the seam so they don't require a rewrite later.
 
-- **Automation**: `risk/policy_engine.py` interface is reserved (unimplemented) between Risk Engine output and any future action — see brief §36. Currently, a `HIGH`/`CRITICAL` alert only ever *notifies* (persists + surfaces in the UI); nothing acts on it.
+- **Automation**: the Detection → Policy Engine → Human Approval → Automation chain (brief §36) is specified, contracts and guardrails included, in [future-automation.md](future-automation.md). The attachment point is `run_pipeline` in `backend/app/services/pipeline.py`. No policy-engine code exists yet, by design: its contracts get added together with their first implementation and tests. Currently a `HIGH`/`CRITICAL` alert only ever *notifies* (persists and surfaces in the UI); nothing acts on it.
 - **Docker/orchestration**: see [docs/future-deployment.md](future-deployment.md).
-- **PostgreSQL**: swap the SQLAlchemy connection string + run migrations; the `services/` adapter layer means detector/API code is untouched.
+- **PostgreSQL**: add a driver and Alembic migrations (none exist yet; tables are created at startup), then swap the SQLAlchemy connection string. The repository layer means detector and API code are untouched.
 - **Distributed model serving**: `ModelLoader` gets a second backend implementation (gRPC/HTTP to an inference service) behind the same interface; `ModelRegistry` is unaffected.
 - **Native endpoint agent**: the simulated endpoint-event generator already emits osquery-compatible table/column names (per [repository-analysis.md](repository-analysis.md) §8) so a real agent's output can replace the simulator without changing `BehavioralAnomalyDetector`.

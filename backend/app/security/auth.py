@@ -80,13 +80,48 @@ def _sha256(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def _write_private(path: Path, text: str) -> None:
+def _create_private_once(path: Path, text: str) -> bool:
+    """Create `path` holding `text`, readable by its owner only, unless it
+    already exists. Returns True if this call created it.
+
+    Several worker processes can start at once (uvicorn --workers N). The
+    text is written in full under a temporary name that is owner-only from
+    the moment it exists (no chmod-after-write window), then hard-linked
+    into place. A link never replaces an existing file, so exactly one
+    process wins, the rest use what it wrote, and no reader ever sees a
+    half-written file. (On Windows the mode bits are ignored and the
+    directory's ACLs apply.)
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    tmp = path.with_name(f".{path.name}.{os.getpid()}-{secrets.token_hex(4)}.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
-        os.chmod(path, 0o600)  # best effort; ACLs govern this on Windows
-    except OSError:
-        pass
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        try:
+            os.link(tmp, path)
+            return True
+        except FileExistsError:
+            return False
+        except OSError:
+            # No hard links on this filesystem (FAT, some network mounts):
+            # an exclusive create still never overwrites another process's file.
+            try:
+                direct = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            except FileExistsError:
+                return False
+            with os.fdopen(direct, "w", encoding="utf-8") as f:
+                f.write(text)
+            return True
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def _read_client_store(store: Path) -> dict[str, Client]:
+    data = json.loads(store.read_text(encoding="utf-8"))
+    return {c["client_id"]: Client(c["client_id"], c["secret_sha256"], frozenset(c["scopes"])) for c in data}
 
 
 def _parse_clients(raw: str) -> dict[str, Client]:
@@ -118,15 +153,19 @@ def load_clients() -> dict[str, Client]:
 
     store = settings.state_dir / "clients.json"
     if store.exists():
-        data = json.loads(store.read_text(encoding="utf-8"))
-        return {c["client_id"]: Client(c["client_id"], c["secret_sha256"], frozenset(c["scopes"])) for c in data}
+        return _read_client_store(store)
 
     if not settings.is_development:
         raise AuthConfigError("No API clients configured: set SENTIVRA_OAUTH_CLIENTS")
     secret = secrets.token_urlsafe(32)
     client = Client("dashboard", _sha256(secret), frozenset(_DASHBOARD_SCOPES))
-    _write_private(store, json.dumps([{"client_id": client.client_id, "secret_sha256": client.secret_sha256,
-                                       "scopes": sorted(client.scopes)}], indent=2))
+    created = _create_private_once(store, json.dumps([{"client_id": client.client_id,
+                                                        "secret_sha256": client.secret_sha256,
+                                                        "scopes": sorted(client.scopes)}], indent=2))
+    if not created:
+        # Another worker process bootstrapped first and printed its secret;
+        # use that client, not this one, which nothing stored.
+        return _read_client_store(store)
     logger.warning(
         "\n\n  SENTIVRA generated an API client for the dashboard (development only).\n"
         "  client_id:     dashboard\n"
@@ -151,7 +190,9 @@ def signing_key() -> str:
     # Development uses a random per-install key instead.
     path = settings.state_dir / "signing.key"
     if not path.exists():
-        _write_private(path, secrets.token_urlsafe(48))
+        _create_private_once(path, secrets.token_urlsafe(48))
+    # Always read back: if another worker created the key first, this
+    # process must sign and verify with that one.
     return path.read_text(encoding="utf-8").strip()
 
 

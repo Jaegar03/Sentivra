@@ -47,7 +47,7 @@ curl -X POST http://localhost:8000/api/v1/endpoint/demo
 
 ### What happens to the data
 
-Uploaded rows are normalized and analyzed in memory: Sigma rules, host behavior rules against the fleet baseline, and authentication rules. After that, only the batch summary, the detection results and the audit record are persisted; the raw rows are discarded when the request ends. See [docs/privacy.md](../docs/privacy.md).
+Uploaded rows are normalized and analyzed in memory: Sigma rules, host behavior rules against the fleet baseline, and authentication rules. After that, only the batch summary, the detection results and the audit record are persisted; the raw rows are discarded when the request ends. Per-integration data handling will be documented in docs/privacy.md, written with the Phase 7 connectors.
 
 ## 2. Wazuh (works today, alerts only)
 

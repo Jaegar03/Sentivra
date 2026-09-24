@@ -85,6 +85,7 @@ Limits apply while the body is received, before FastAPI parses it:
 - A declared `Content-Length` over the limit is refused with `413` before any of the body is read.
 - A body without one (chunked transfer) is cut off with `413` the moment it crosses the limit.
 - Row and packet caps (`SENTIVRA_MAX_NETWORK_FLOWS`, `SENTIVRA_MAX_PCAP_PACKETS`, `SENTIVRA_MAX_ENDPOINT_ROWS`, `SENTIVRA_MAX_LOG_LINES`) then bound the work done per request.
+- Multipart parts over 1 MB are spooled by Starlette to an anonymous OS temporary file while the request is parsed. The file is deleted when the request ends; SENTIVRA never stores uploads.
 
 ## Conventions
 
@@ -127,7 +128,7 @@ An alert is created only when the aggregate severity is above SAFE.
 
 | Method | Path | Body | Description |
 |---|---|---|---|
-| POST | `/api/v1/analyze/file` | multipart `file` | Detects the type from magic bytes, computes SHA-256 and entropy, and checks for archive bombs. Then runs YARA, ClamAV (when reachable) and structural heuristics. The file is never executed. Its bytes are held in memory for the request only; the hash, metadata and verdict are persisted. Returns `file_metadata`, `findings`, `risk_assessment` and `source_type`. |
+| POST | `/api/v1/analyze/file` | multipart `file` | Detects the type from magic bytes, computes SHA-256 and entropy, and checks for archive bombs. Then runs YARA, ClamAV (when reachable) and structural heuristics. The file is never executed. Its bytes are analyzed in memory for the request only and never stored; the hash, metadata and verdict are persisted. Returns `file_metadata`, `findings`, `risk_assessment` and `source_type`. |
 | POST | `/api/v1/analyze/text` | — | **501**: detector not built yet. |
 | POST | `/api/v1/analyze/url` | — | **501**: detector not built yet. |
 | POST | `/api/v1/analyze/prompt` | — | **501**: detector not built yet. |

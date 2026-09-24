@@ -51,7 +51,8 @@ Methodology: STRIDE per trust boundary, plus an explicit "what this does NOT det
 | Oversized request body, including chunked bodies with no `Content-Length` | DoS | Limits are enforced while the body is received, before parsing: 1 MB for JSON, the upload cap plus multipart framing on the four upload routes. A declared oversize gets `413` before any read | `backend/app/security/body_limit.py` |
 | Decompression-bomb file upload | DoS | Nested-archive depth, entry-count and uncompressed-size limits | `backend/app/security/uploads.py` |
 | SSRF via a URL-analysis request fetching attacker-controlled internal address | Tampering/Info disclosure | `URLDetector`/any outbound fetch goes through an SSRF-guarded HTTP client: DNS-resolves and rejects RFC1918/loopback/link-local targets before connecting, no redirects followed blindly | `backend/app/security/ssrf_guard.py` |
-| Path traversal via filename in upload/attachment metadata | Tampering | Uploaded bytes are never written to disk: they're analyzed in memory and discarded, and the original filename is kept only as metadata, never used as a path | `backend/app/api/analyze.py`, `backend/app/security/uploads.py` |
+| Path traversal via filename in upload/attachment metadata | Tampering | SENTIVRA never writes an upload to a path of its own choosing, let alone one derived from the filename. Bytes are analyzed in memory and discarded, and the original filename is kept only as metadata. (The multipart parser spools parts over 1 MB to an anonymous OS temporary file for the life of the request; its name is never derived from input) | `backend/app/api/analyze.py`, `backend/app/security/uploads.py` |
+| Upload content lingering on disk | Info disclosure | Starlette spools multipart parts over 1 MB to an anonymous temporary file: unlinked at creation on POSIX, delete-on-close on Windows, gone when the request ends. It is never retained, but it does reach the temp filesystem, so deployments mount a memory-backed `/tmp` ([future-deployment.md](future-deployment.md) §5) | Starlette `MultiPartParser` (`spool_max_size`) |
 | Command/argument injection when shelling out to Suricata/ClamAV/YARA CLI | Tampering/EoP | No shell=True, argument lists only, no user input concatenated into a command string; engine subprocess run with minimal env | `backend/app/detectors/{yara,clamav}_detector.py` |
 | Abusive request volume against `/analyze/*` or webhooks | DoS | Per-IP rate limiting at the ASGI layer (300/min for the API, 10/min for the token endpoint; `429` with `Retry-After`) | `backend/app/security/rate_limit.py` |
 | Cross-origin misuse of the API from an unintended web origin | Tampering | Explicit CORS allowlist, never a wildcard; credentials never allowed; only `Authorization` and `Content-Type` request headers | `backend/app/core/config.py`, `backend/app/main.py` |
@@ -60,7 +61,7 @@ Methodology: STRIDE per trust boundary, plus an explicit "what this does NOT det
 
 #### Boundary A: what the API hardening does not cover yet
 
-These are known gaps in this build, not solved problems:
+These are known gaps in this build, not solved problems. [future-deployment.md](future-deployment.md) §3 lists the change that closes each deployment-related one:
 
 - **No TLS in the app.** The backend serves plain HTTP on localhost. Any deployment beyond localhost must terminate TLS in front of it; bearer tokens and client secrets must never cross a network in clear text.
 - **No per-token revocation.** A leaked token stays valid until it expires (default 1 hour). The levers are:
@@ -136,6 +137,6 @@ This section exists because brief §32/§33/§38 forbid overclaiming. Every dete
 
 - Dynamic/behavioral malware detonation (no sandbox execution of uploaded files — brief §7, §38: "never execute uploaded files").
 - Real-time full-packet network capture on production infrastructure (PCAP analysis is demo-upload-driven, brief §26).
-- Autonomous remediation of any kind (brief §36) — Sentivra only ever detects and surfaces; a human acts.
+- Autonomous remediation of any kind (brief §36) — Sentivra only ever detects and surfaces; a human acts. The future design, with its approval gate and guardrails, is in [future-automation.md](future-automation.md).
 - Multi-tenant isolation hardening — this phase assumes a single operator/demo context; multi-tenant security boundaries are future work.
 - Decryption or unofficial access to WhatsApp/Telegram private data (brief §12, §14, §15) — explicitly refused as out of scope, not a gap.

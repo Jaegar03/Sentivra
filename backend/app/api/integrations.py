@@ -51,12 +51,19 @@ async def list_integrations(registry: DetectorRegistry = Depends(get_detector_re
          "detail": "Upload osqueryd.results.log to POST /api/v1/endpoint/osquery (pack in endpoint-agent/osquery/)"},
         {"name": "Wazuh", "kind": "telemetry", "status": "Available",
          "detail": "Upload alerts.json to POST /api/v1/logs/analyze"},
-        {"name": "Suricata", "kind": "engine", "status": "Available" if s.suricata_eve_log else "Not configured",
-         "detail": "EVE JSON ingestion is planned; no Suricata alerts are read in this version"
-                   if not s.suricata_eve_log else f"EVE log path set: {s.suricata_eve_log}"},
-        {"name": "Zeek", "kind": "engine", "status": "Available" if s.zeek_log_dir else "Not configured",
-         "detail": "Zeek log ingestion is planned; flows come from uploads" if not s.zeek_log_dir
-                   else f"Log directory set: {s.zeek_log_dir}"},
+        # Setting a path doesn't make these work: nothing reads EVE or Zeek
+        # logs yet, so reporting "Available" would claim signature coverage
+        # that doesn't exist. Same rule as the messaging connectors above.
+        {"name": "Suricata", "kind": "engine", "status": "Not implemented",
+         "credentials_configured": bool(s.suricata_eve_log),
+         "detail": "EVE JSON ingestion is planned; no Suricata alerts are read in this version. "
+                   + ("SENTIVRA_SURICATA_EVE_LOG is set but nothing reads it yet." if s.suricata_eve_log
+                      else "No EVE log path configured.")},
+        {"name": "Zeek", "kind": "engine", "status": "Not implemented",
+         "credentials_configured": bool(s.zeek_log_dir),
+         "detail": "Zeek log ingestion is planned; flows come from uploads. "
+                   + ("SENTIVRA_ZEEK_LOG_DIR is set but nothing reads it yet." if s.zeek_log_dir
+                      else "No Zeek log directory configured.")},
         await engine("YaraDetector", "YARA"),
         await engine("ClamAVDetector", "ClamAV"),
     ]

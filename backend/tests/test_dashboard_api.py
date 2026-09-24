@@ -61,7 +61,23 @@ def test_integrations_report_honest_status(app_client):
     items = {i["name"]: i for i in app_client.get("/api/v1/integrations").json()}
     for name in ("Gmail", "Telegram", "WhatsApp Business"):
         assert items[name]["status"] == "Not implemented"
-    assert items["Suricata"]["status"] == "Not configured"
+    assert items["Suricata"]["status"] == "Not implemented"
     assert items["osquery"]["status"] == "Available"
     assert items["YARA"]["status"] == "Available"
     assert items["ClamAV"]["status"] == "Not configured"
+
+
+def test_setting_an_engine_path_does_not_claim_coverage(app_client, monkeypatch):
+    # Regression: a configured SURICATA_EVE_LOG / ZEEK_LOG_DIR used to show
+    # "Available", though nothing reads those logs.
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "suricata_eve_log", "/var/log/suricata/eve.json")
+    monkeypatch.setattr(get_settings(), "zeek_log_dir", "/opt/zeek/logs/current")
+    items = {i["name"]: i for i in app_client.get("/api/v1/integrations").json()}
+    for name in ("Suricata", "Zeek"):
+        assert items[name]["status"] == "Not implemented"
+        assert "nothing reads it yet" in items[name]["detail"]
+    findings = app_client.post("/api/v1/network/demo").json()["findings"]
+    notes = [e["detail"] for f in findings for e in f["evidence"] if e["type"] == "engine_status"]
+    assert any(n.startswith("Suricata: Not implemented") and "nothing reads it yet" in n for n in notes)

@@ -120,7 +120,7 @@ export default function NetworkPage() {
         }
       />
       <p className="text-xs text-muted-foreground">
-        Suricata and Zeek aren&apos;t configured in this build, so results come from Sentivra&apos;s own rules and models only.
+        Suricata and Zeek aren&apos;t integrated in this build (nothing reads their logs yet), so results come from Sentivra&apos;s own rules and models only.
         Uploaded traffic is parsed in memory and discarded after the request.
       </p>
       <AnalysisError error={error} />

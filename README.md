@@ -4,7 +4,7 @@
 
 SENTIVRA is a demonstration-quality, multi-layer cybersecurity detection platform: a single unified architecture where specialized detectors (file/malware, SQL injection, prompt injection, phishing/malicious URL, network anomaly, endpoint behavior, Sigma/log rules) each produce independent, evidence-backed findings that a risk engine aggregates into one explainable severity verdict — never a single model's opinion presented as a final decision.
 
-This is a **local, demonstration build** — no Docker, no Kubernetes, no Redis/Celery/Kafka. It runs with normal development commands (`uvicorn`, `next dev`) and is architected so that infrastructure can be added later without a rewrite. The future deployment design (docs/future-deployment.md) is written in Phase 11.
+This is a **local, demonstration build** — no Docker, no Kubernetes, no Redis/Celery/Kafka. It runs with normal development commands (`uvicorn`, `next dev`) and is architected so that infrastructure can be added later without a rewrite. The staged plan for that is in [docs/future-deployment.md](docs/future-deployment.md) (design only; no Docker files exist).
 
 ## Project status
 
@@ -22,6 +22,7 @@ Built in phases (see [docs/architecture.md](docs/architecture.md) § Implementat
 | 8 | Unified risk engine polish, alert management | 🔄 Engine, explanations and alert status (acknowledge/resolve, audited) done; policy engine reserved for later |
 | 9 | Next.js SOC dashboard | ✅ Done: 14 pages, light and dark; see [frontend/README.md](frontend/README.md) |
 | 10 | Security hardening | ✅ OAuth2 client-credentials with per-route scopes, dashboard sign-in, request-body limits, token-endpoint rate limit, strict response headers and a dashboard CSP. See [docs/api.md](docs/api.md#authentication) and the known gaps in [docs/threat-model.md](docs/threat-model.md) |
+| 11 | Future deployment and automation design | ✅ Documentation only, as the brief requires: [docs/future-deployment.md](docs/future-deployment.md) (what already carries over, what must change first, staged container architecture) and [docs/future-automation.md](docs/future-automation.md) (policy engine → human approval → executor contracts and guardrails). No Dockerfile, compose file, manifest or automation code |
 
 ## Quick start
 
@@ -126,7 +127,8 @@ Open **Demo mode** in the sidebar and choose *Run all scenarios* to see the whol
 - [docs/api.md](docs/api.md) — authentication and scopes, request limits, every endpoint (including the ones that answer 501) and the webhooks still to come
 - [docs/model-card.md](docs/model-card.md) — every model's data, splits, metrics, evaluation date and limitations
 - [endpoint-agent/README.md](endpoint-agent/README.md) — osquery pack deployment, Wazuh ingestion, future native agent
-- docs/future-deployment.md — planned Docker/Kubernetes/Redis architecture; not written yet (Phase 11)
+- [docs/future-deployment.md](docs/future-deployment.md) — staged container/cloud architecture, the code changes each stage needs, and the security requirements that carry over (design only)
+- [docs/future-automation.md](docs/future-automation.md) — Detection → Policy Engine → Human Approval → Automation: reserved contracts, action catalog, guardrails (design only)
 - docs/privacy.md — per-integration data handling; not written yet (arrives with the Phase 7 connectors)
 
 ## Principles

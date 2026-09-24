@@ -47,13 +47,16 @@ def flow_from_event(event: SecurityEvent) -> FlowRecord | None:
 
 
 def _engine_notes() -> list[str]:
+    # Always said: neither engine's output is read in this version, whether
+    # or not a path is configured, so no result may imply signature coverage.
     settings = get_settings()
-    notes = []
-    if not settings.suricata_eve_log:
-        notes.append("Suricata: Not Configured (no signature alerts in this result)")
-    if not settings.zeek_log_dir:
-        notes.append("Zeek: Not Configured (flows come from the upload, not Zeek telemetry)")
-    return notes
+    configured = " (a path is configured, but nothing reads it yet)"
+    return [
+        "Suricata: Not implemented; no signature alerts in this result"
+        + (configured if settings.suricata_eve_log else ""),
+        "Zeek: Not implemented; flows come from the upload, not Zeek telemetry"
+        + (configured if settings.zeek_log_dir else ""),
+    ]
 
 
 class NetworkAnomalyDetector(BaseDetector):
