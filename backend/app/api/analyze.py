@@ -78,6 +78,7 @@ async def analyze_file_endpoint(
 
     return {
         "event_id": event.event_id,
+        "source_type": event.source_type.value,
         "file_metadata": {
             "filename": meta.filename,
             "sha256": meta.sha256,

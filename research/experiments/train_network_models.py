@@ -271,9 +271,6 @@ def main() -> None:
             ("Trained and evaluated on synthetic flows from this repo's own generator. The metrics show "
              "the pipeline works end to end; they are not evidence of performance on real traffic."),
             "The generator defines both normal and anomalous behavior, so separability is optimistic.",
-            ("The classifier's recall on the held-out category (beaconing) is a generator artifact: in this "
-             "synthetic data, beacons share small response sizes with categories the classifier did see. "
-             "Real beacons resemble ordinary small HTTPS requests."),
             "Per-flow features carry no DNS query-name features; DNS tunneling is caught by the behavior rule.",
             "Unsupervised training assumes a clean benign baseline.",
             ("The flow parser already reads CICFlowMeter/CIC-IDS2017 CSVs, but this script can't yet train "
@@ -312,6 +309,12 @@ def main() -> None:
     })
     write_model("network", "classifier", clf_dir / "model.lgb.txt", {
         **common, "artifact_format": "lightgbm_text",
+        "limitations": [
+            *common["limitations"],
+            ("Its recall on the held-out category (beaconing) is a generator artifact: in this synthetic data, "
+             "beacons share small response sizes with categories the classifier did see. Real beacons resemble "
+             "ordinary small HTTPS requests."),
+        ],
         "preprocessing": {"input": "unscaled FEATURE_NAMES", "held_out_category": HELD_OUT},
         "threshold": clf_layer.threshold,
         "threshold_policy": f"lowest threshold with FPR <= {CLASSIFIER_MAX_FPR} on the calibration split",

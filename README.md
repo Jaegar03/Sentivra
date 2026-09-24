@@ -4,7 +4,7 @@
 
 SENTIVRA is a demonstration-quality, multi-layer cybersecurity detection platform: a single unified architecture where specialized detectors (file/malware, SQL injection, prompt injection, phishing/malicious URL, network anomaly, endpoint behavior, Sigma/log rules) each produce independent, evidence-backed findings that a risk engine aggregates into one explainable severity verdict — never a single model's opinion presented as a final decision.
 
-This is a **local, demonstration build** — no Docker, no Kubernetes, no Redis/Celery/Kafka. It runs with normal development commands (`uvicorn`, `next dev`) and is architected so that infrastructure can be added later without a rewrite. See [docs/future-deployment.md](docs/future-deployment.md).
+This is a **local, demonstration build** — no Docker, no Kubernetes, no Redis/Celery/Kafka. It runs with normal development commands (`uvicorn`, `next dev`) and is architected so that infrastructure can be added later without a rewrite. The future deployment design (docs/future-deployment.md) is written in Phase 11.
 
 ## Project status
 
@@ -19,11 +19,13 @@ Built in phases (see [docs/architecture.md](docs/architecture.md) § Implementat
 | 5 | Network anomaly detection: behavior rules, statistical, Isolation Forest, autoencoder, classifier; CSV/PCAP upload | ✅ Done. Models trained on **synthetic** data; see [docs/model-card.md](docs/model-card.md) |
 | 6 | Endpoint telemetry: osquery pack + normalizer, simulator, Sigma engine, host behavior rules, auth/log rules, Wazuh alert ingestion | ✅ Done, rules only: no endpoint ML model in this version. See [endpoint-agent/README.md](endpoint-agent/README.md) |
 | 7 | Gmail / Telegram / WhatsApp Business connectors | ⏳ Planned |
-| 8 | Unified risk engine polish, alert management | ⏳ Partially done (engine exists, §7 of architecture.md) |
-| 9 | Next.js SOC dashboard | ⏳ Planned |
+| 8 | Unified risk engine polish, alert management | 🔄 Engine, explanations and alert status (acknowledge/resolve, audited) done; policy engine reserved for later |
+| 9 | Next.js SOC dashboard | ✅ Done: 14 pages, light and dark; see [frontend/README.md](frontend/README.md) |
 | 10 | Testing & hardening | 🔄 Ongoing per-phase |
 
-## Quick start (backend)
+## Quick start
+
+### Backend
 
 ```bash
 cd backend
@@ -86,13 +88,26 @@ curl -X POST http://localhost:8000/api/v1/logs/analyze -F "file=@auth.log"
 curl http://localhost:8000/api/v1/rules
 ```
 
+## Dashboard
+
+```bash
+cd frontend
+npm install
+npm run dev      # http://localhost:3000 (the backend must be running)
+```
+
+Open **Demo mode** in the sidebar and choose *Run all scenarios* to see the whole pipeline: an EICAR test file, a synthetic network sample and a simulated endpoint fleet, each labeled as live, simulated or demo data everywhere it appears.
+
 ## Documentation
 
 - [docs/repository-analysis.md](docs/repository-analysis.md) — survey of every reference repository named in the project brief, with license/maintenance/decision per repo
 - [docs/architecture.md](docs/architecture.md) — system design, data flow, detector matrix, model registry
 - [docs/threat-model.md](docs/threat-model.md) — STRIDE analysis of Sentivra itself, plus stated per-detector limitations
-- [docs/future-deployment.md](docs/future-deployment.md) — planned Docker/Kubernetes/Redis architecture (not implemented yet)
-- [docs/privacy.md](docs/privacy.md), [docs/model-card.md](docs/model-card.md), [docs/api.md](docs/api.md) — added as their corresponding phases land
+- [docs/api.md](docs/api.md) — every endpoint, including the ones that answer 501 and the webhooks still to come
+- [docs/model-card.md](docs/model-card.md) — every model's data, splits, metrics, evaluation date and limitations
+- [endpoint-agent/README.md](endpoint-agent/README.md) — osquery pack deployment, Wazuh ingestion, future native agent
+- docs/future-deployment.md — planned Docker/Kubernetes/Redis architecture; not written yet (Phase 11)
+- docs/privacy.md — per-integration data handling; not written yet (arrives with the Phase 7 connectors)
 
 ## Principles
 

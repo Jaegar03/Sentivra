@@ -128,3 +128,11 @@ def test_metrics_endpoint_has_no_fake_ml_accuracy(app_client):
     assert "events" in body["totals"]
     assert "accuracy" not in json.dumps(body).lower()
     assert "note" in body
+
+
+def test_status_endpoints_do_not_disclose_absolute_paths(app_client):
+    import re
+
+    for path in ("/api/v1/health", "/api/v1/detectors", "/api/v1/integrations", "/api/v1/models"):
+        text = app_client.get(path).text
+        assert not re.search(r"[A-Za-z]:\\|/home/|/Users/|\\Users\\\\", text), path

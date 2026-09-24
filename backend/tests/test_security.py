@@ -86,3 +86,24 @@ def test_hmac_verification_rejects_tampered_body():
 
 def test_hmac_verification_rejects_missing_header():
     assert verify_hmac_sha256(secret="shh", payload=b"x", signature_header=None) is False
+
+
+def test_cors_origins_accept_comma_separated_and_json(monkeypatch):
+    # Regression: .env.example's plain "http://localhost:3000" used to crash startup,
+    # because pydantic-settings JSON-decodes list fields by default.
+    from app.core.config import Settings
+
+    monkeypatch.setenv("SENTIVRA_CORS_ORIGINS", "http://localhost:3000, http://127.0.0.1:3000")
+    assert Settings().cors_origins == ["http://localhost:3000", "http://127.0.0.1:3000"]
+    monkeypatch.setenv("SENTIVRA_CORS_ORIGINS", '["http://a.example"]')
+    assert Settings().cors_origins == ["http://a.example"]
+
+
+def test_relative_rule_directories_resolve_against_repo_root(monkeypatch):
+    # Regression: a relative SENTIVRA_YARA_RULES_DIR resolved against the process's
+    # working directory, so running from backend/ silently disabled YARA.
+    from app.core.config import REPO_ROOT, Settings
+
+    monkeypatch.setenv("SENTIVRA_YARA_RULES_DIR", "detection-rules/yara")
+    assert Settings().yara_rules_dir == REPO_ROOT / "detection-rules" / "yara"
+    assert Settings().yara_rules_dir.is_dir()

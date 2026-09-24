@@ -42,7 +42,6 @@
   "limitations": [
     "Trained and evaluated on synthetic flows from this repo's own generator. The metrics show the pipeline works end to end; they are not evidence of performance on real traffic.",
     "The generator defines both normal and anomalous behavior, so separability is optimistic.",
-    "The classifier's recall on the held-out category (beaconing) is a generator artifact: in this synthetic data, beacons share small response sizes with categories the classifier did see. Real beacons resemble ordinary small HTTPS requests.",
     "Per-flow features carry no DNS query-name features; DNS tunneling is caught by the behavior rule.",
     "Unsupervised training assumes a clean benign baseline.",
     "The flow parser already reads CICFlowMeter/CIC-IDS2017 CSVs, but this script can't yet train from them (planned: Monday traffic as the benign baseline)."
@@ -2182,6 +2181,6 @@
   "domain": "network",
   "name": "isolation_forest",
   "artifact_filename": "model.onnx",
-  "sha256": "1911a6a0a3ba052fc37e2edc7874eca7fd36e0b59662954d90cc1dae94c9f405",
+  "sha256": "ddaf72ad916a95a7f5166920ea769c6f629b19ef3d5c7f3c3406e497941bec92",
   "evaluation_date": "2026-09-24"
 }

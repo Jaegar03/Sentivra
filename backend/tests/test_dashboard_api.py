@@ -17,6 +17,8 @@ def test_alerts_carry_source_type_and_status(app_client):
     alert = next(a for a in listing if a["assessment_id"] == alert_id)
     assert alert["status"] == "OPEN"
     assert alert["event"]["source_type"] == "LIVE" and alert["event"]["event_type"] == "file_analysis"
+    body = app_client.post("/api/v1/analyze/file", files={"file": ("x.txt", b"hello", "text/plain")}).json()
+    assert body["source_type"] == "LIVE"  # every analysis response carries its input label
     detail = app_client.get(f"/api/v1/alerts/{alert_id}").json()
     assert detail["event"]["attachments"][0]["filename"] == "eicar.txt"
 

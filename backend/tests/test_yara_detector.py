@@ -64,3 +64,16 @@ async def test_yara_detects_obfuscated_powershell(yara_detector: YaraDetector):
     result = await yara_detector.analyze(event)
     assert result.severity != Severity.SAFE
     blob_store.discard(event.metadata["sha256"])
+
+
+@pytest.mark.asyncio
+async def test_yara_score_follows_declared_severity(yara_detector: YaraDetector):
+    # Regression: a fixed 0.65 score made the risk engine rate the EICAR rule
+    # (declared LOW: a harmless test file) as a MEDIUM alert.
+    from app.risk.engine import RiskEngine
+
+    event = await _event_for(EICAR)
+    result = await yara_detector.analyze(event)
+    assert result.severity == Severity.LOW and result.score <= 0.35
+    assert RiskEngine().assess(event.event_id, [result]).severity == Severity.LOW
+    blob_store.discard(event.metadata["sha256"])

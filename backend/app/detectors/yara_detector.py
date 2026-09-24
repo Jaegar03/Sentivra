@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.core.config import get_settings
+from app.core.config import REPO_ROOT, get_settings
 from app.detectors.base import AvailabilityStatus, BaseDetector, DetectorAvailability
 from app.events.schema import SecurityEvent, SecurityEventType
 from app.schemas.detection import (
@@ -63,7 +63,7 @@ class YaraDetector(BaseDetector):
 
             return DetectorAvailability(
                 status=AvailabilityStatus.AVAILABLE,
-                detail=f"Compiled rules from {self._rules_dir}",
+                detail=f"Compiled rules from {_display_path(self._rules_dir)}",
                 engine_version=getattr(yara, "__version__", "unknown"),
             )
         return DetectorAvailability(
@@ -124,11 +124,15 @@ class YaraDetector(BaseDetector):
             default=Severity.MEDIUM,
             key=lambda s: s.rank,
         )
+        # The score follows the rule author's declared severity, so the risk
+        # engine can't turn a rule marked LOW (e.g. the harmless EICAR test
+        # string) into a MEDIUM alert. Extra matching rules add a little.
+        base = _SEVERITY_SCORE[max_declared_severity]
         return DetectionResult(
             detector=self.name,
             category=self.category,
             severity=max_declared_severity,
-            score=min(1.0, 0.5 + 0.15 * len(matches)),
+            score=round(min(0.99, base + 0.05 * (len(matches) - 1)), 3),
             confidence=0.9,
             evidence=evidence,
             recommended_action=(
@@ -138,6 +142,18 @@ class YaraDetector(BaseDetector):
             ),
             model_version="yara-rules-demo-v1",
         )
+
+
+_SEVERITY_SCORE = {Severity.LOW: 0.3, Severity.MEDIUM: 0.55, Severity.HIGH: 0.8, Severity.CRITICAL: 0.95}
+
+
+def _display_path(path: Path) -> str:
+    """Repo-relative when possible: status text is served by the API, and an
+    absolute path would disclose the host's directory layout."""
+    try:
+        return path.resolve().relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return path.name
 
 
 def _severity_from_meta(value: str | None) -> Severity:

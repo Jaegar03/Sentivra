@@ -1,0 +1,150 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+
+  /* Data-viz roles (validated palette; see the dataviz reference palette). */
+  --color-series-1: var(--series-1);
+  --color-grid: var(--grid);
+  --color-axis: var(--axis);
+  --color-ink-muted: var(--ink-muted);
+  --color-status-good: var(--status-good);
+  --color-status-low: var(--status-low);
+  --color-status-warning: var(--status-warning);
+  --color-status-serious: var(--status-serious);
+  --color-status-critical: var(--status-critical);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* Light. Every color is defined here; the dark block only redefines. */
+:root {
+  color-scheme: light;
+  --background: #f9f9f7;          /* page plane */
+  --foreground: #0b0b0b;          /* primary ink */
+  --card: #fcfcfb;                /* chart / card surface */
+  --card-foreground: #0b0b0b;
+  --popover: #fcfcfb;
+  --popover-foreground: #0b0b0b;
+  --primary: #0b0b0b;
+  --primary-foreground: #fcfcfb;
+  --secondary: #f0efec;
+  --secondary-foreground: #0b0b0b;
+  --muted: #f0efec;
+  --muted-foreground: #52514e;    /* secondary ink */
+  --accent: #f0efec;
+  --accent-foreground: #0b0b0b;
+  --destructive: #d03b3b;
+  --border: rgba(11, 11, 11, 0.1);
+  --input: rgba(11, 11, 11, 0.16);
+  --ring: #2a78d6;
+  --radius: 0.625rem;
+  --sidebar: #f3f2ee;
+  --sidebar-foreground: #0b0b0b;
+  --sidebar-primary: #0b0b0b;
+  --sidebar-primary-foreground: #fcfcfb;
+  --sidebar-accent: #e8e7e2;
+  --sidebar-accent-foreground: #0b0b0b;
+  --sidebar-border: rgba(11, 11, 11, 0.1);
+  --sidebar-ring: #2a78d6;
+
+  --series-1: #2a78d6;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --ink-muted: #898781;
+  /* Status palette is fixed across modes and always paired with icon + label. */
+  --status-good: #0ca30c;
+  --status-low: #898781;
+  --status-warning: #fab219;
+  --status-serious: #ec835a;
+  --status-critical: #d03b3b;
+}
+
+.dark {
+  color-scheme: dark;
+  --background: #0d0d0d;
+  --foreground: #ffffff;
+  --card: #1a1a19;
+  --card-foreground: #ffffff;
+  --popover: #1a1a19;
+  --popover-foreground: #ffffff;
+  --primary: #f3f2ee;
+  --primary-foreground: #0d0d0d;
+  --secondary: #262624;
+  --secondary-foreground: #ffffff;
+  --muted: #262624;
+  --muted-foreground: #c3c2b7;
+  --accent: #262624;
+  --accent-foreground: #ffffff;
+  --destructive: #d03b3b;
+  --border: rgba(255, 255, 255, 0.1);
+  --input: rgba(255, 255, 255, 0.16);
+  --ring: #3987e5;
+  --sidebar: #121211;
+  --sidebar-foreground: #ffffff;
+  --sidebar-primary: #f3f2ee;
+  --sidebar-primary-foreground: #0d0d0d;
+  --sidebar-accent: #232322;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgba(255, 255, 255, 0.1);
+  --sidebar-ring: #3987e5;
+
+  --series-1: #3987e5;
+  --grid: #2c2c2a;
+  --axis: #383835;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* Numbers that align in columns (tables, axis ticks). Not for big standalone figures. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}

@@ -8,10 +8,13 @@ overridden per-deployment.
 
 from __future__ import annotations
 
+import json
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # backend/app/core/config.py -> repo root is three parents up
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -28,9 +31,31 @@ class Settings(BaseSettings):
     env: str = "development"
     secret_key: str = "insecure-development-key-override-me"
     database_url: str = f"sqlite:///{REPO_ROOT / 'sentivra.db'}"
-    cors_origins: list[str] = ["http://localhost:3000"]
+    # Browsers treat localhost and 127.0.0.1 as different origins, so both
+    # local spellings of the dashboard are allowed by default.
+    cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:3000", "http://127.0.0.1:3000"]
     log_level: str = "INFO"
-    rate_limit_per_minute: int = 60
+    # Per client IP. The dashboard makes several requests per page view (plus
+    # health polling), so 60/min was reachable by one person clicking around.
+    rate_limit_per_minute: int = 300
+
+    @field_validator("yara_rules_dir", "models_dir", "rules_dir", mode="after")
+    @classmethod
+    def _resolve_against_repo(cls, value: Path) -> Path:
+        """Relative directories in .env mean "relative to the repo", not to
+        whatever directory uvicorn happened to be started from."""
+        return value if value.is_absolute() else REPO_ROOT / value
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _parse_origins(cls, value: object) -> object:
+        """Accept "a,b" (what people write in .env files) as well as a JSON list."""
+        if isinstance(value, str):
+            text = value.strip()
+            if text.startswith("["):
+                return json.loads(text)
+            return [origin.strip() for origin in text.split(",") if origin.strip()]
+        return value
 
     # Security engines — empty/unset means "probe default location, report
     # Not Configured if absent". Never assumed present.

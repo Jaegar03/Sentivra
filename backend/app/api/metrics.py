@@ -28,6 +28,13 @@ router = APIRouter(prefix="/api/v1", tags=["system"])
 
 SCORE_PENALTIES = {"CRITICAL": 25, "HIGH": 10, "MEDIUM": 4, "LOW": 1}
 SEVERITY_ORDER = ("SAFE", "LOW", "MEDIUM", "HIGH", "CRITICAL")
+# Detection domains shown on the dashboard, by the detectors that serve them.
+# Domains whose detectors don't exist yet (URLs, prompts) are absent, not zero.
+DOMAINS = {
+    "network": {"NetworkAnomalyDetector"},
+    "files": {"MalwareDetector", "YaraDetector", "ClamAVDetector"},
+    "endpoint": {"BehavioralAnomalyDetector", "SigmaDetector", "LogDetector"},
+}
 
 
 def _as_utc(dt: datetime) -> datetime:
@@ -43,9 +50,11 @@ async def metrics(window_hours: int = Query(24, ge=1, le=24 * 30), db: Session =
     sources = EventRepository(db).summaries([r.event_id for r in rows])
 
     by_detector: Counter[str] = Counter()
+    by_domain: Counter[str] = Counter({d: 0 for d in DOMAINS})
     for r in rows:
-        findings = json.loads(r.assessment_json).get("findings", [])
-        by_detector.update({f["detector"] for f in findings})
+        detectors = {f["detector"] for f in json.loads(r.assessment_json).get("findings", [])}
+        by_detector.update(detectors)
+        by_domain.update(d for d, members in DOMAINS.items() if detectors & members)
 
     bucket = timedelta(hours=1) if window_hours <= 72 else timedelta(days=1)
     buckets = int(timedelta(hours=window_hours) / bucket)
@@ -74,6 +83,7 @@ async def metrics(window_hours: int = Query(24, ge=1, le=24 * 30), db: Session =
             "by_status": dict(Counter(r.status for r in rows)),
             "by_classification": dict(Counter(r.classification for r in rows).most_common()),
             "by_detector": dict(by_detector.most_common()),
+            "by_domain": dict(by_domain),
             "by_source_type": dict(Counter((sources.get(r.event_id) or {}).get("source_type") or "UNKNOWN"
                                            for r in rows)),
             "timeline": {
