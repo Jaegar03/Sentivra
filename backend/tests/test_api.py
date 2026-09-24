@@ -25,17 +25,22 @@ def test_detectors_endpoint_lists_registered_detectors(app_client):
     resp = app_client.get("/api/v1/detectors")
     assert resp.status_code == 200
     names = {d["name"] for d in resp.json()}
-    assert {"MalwareDetector", "YaraDetector", "ClamAVDetector"} <= names
+    assert {"MalwareDetector", "YaraDetector", "ClamAVDetector", "NetworkAnomalyDetector"} <= names
 
 
-def test_models_endpoint_reports_untrained_models_honestly(app_client):
+def test_models_endpoint_reports_trained_and_untrained_models_honestly(app_client):
     resp = app_client.get("/api/v1/models")
     assert resp.status_code == 200
-    entries = resp.json()
-    assert len(entries) > 0
-    # None of the models/ directories have metadata.json yet in this phase —
-    # the registry must say so, never fabricate a "trained" model.
-    assert all(e["trained"] is False for e in entries)
+    entries = {f"{e['domain']}/{e['name']}": e for e in resp.json()}
+    # Trained models carry their provenance: pinned hash, evaluation date,
+    # datasets and limitations.
+    for key in ("network/isolation_forest", "network/autoencoder", "network/classifier"):
+        meta = entries[key]["metadata"]
+        assert entries[key]["trained"] is True
+        assert len(meta["sha256"]) == 64 and meta["evaluation_date"] and meta["datasets"] and meta["limitations"]
+    # Models that haven't been trained say so rather than being faked.
+    assert entries["malware/ember"]["trained"] is False
+    assert entries["malware/ember"]["reason_untrained"]
 
 
 def test_analyze_file_detects_eicar(app_client):

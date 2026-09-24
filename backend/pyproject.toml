@@ -34,6 +34,9 @@ dependencies = [
     "regex>=2024.5",       # pattern rules run with a per-match timeout (ReDoS guard)
     "tldextract>=5.1",     # registered-domain extraction from the bundled Public Suffix List
     "pyyaml>=6.0",         # rule packs under detection-rules/ (yaml.safe_load only)
+    # Network anomaly detection (Phase 5)
+    "onnxruntime>=1.18",   # serves the Isolation Forest and autoencoder exported to ONNX
+    "scapy>=2.6",          # PCAP parsing for the upload demo (GPL-2.0, used as a library)
 ]
 
 [project.optional-dependencies]
@@ -45,6 +48,8 @@ dev = [
 # Training/evaluation scripts under research/. Not needed to run the backend.
 research = [
     "pandas>=2.2",
+    "skl2onnx>=1.17",      # export scikit-learn models to ONNX
+    "onnx>=1.16",
 ]
 
 [tool.setuptools.packages.find]

@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     max_text_chars: int = 100_000
     regex_timeout_s: float = 0.05
 
+    # Network uploads (CSV flows or PCAP): hard caps on work per request.
+    max_network_flows: int = 200_000
+    max_pcap_packets: int = 500_000
+
     # Opt-in URL enrichment (redirect chain, TLS certificate, RDAP domain
     # age). Off unless a request asks for it: fetching a phishing URL can
     # confirm to its operator that the recipient opened the message.

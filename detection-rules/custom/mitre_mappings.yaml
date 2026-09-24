@@ -86,3 +86,32 @@ ai_agent_tool_invocation:
     technique_name: AI Agent Tool Invocation
     tactic: Execution, Privilege Escalation
     source: MITRE ATLAS v5.6.0
+
+# ---- Network (NetworkAnomalyDetector batch rules) --------------------------
+# Deliberately unmapped: "large outbound transfer" (volume alone doesn't show
+# which channel was used, so T1041/T1048 would be a guess) and "periodic
+# beaconing" (a timing pattern, not a technique).
+
+network_scanning:
+  - technique_id: T1046
+    technique_name: Network Service Discovery
+    tactic: Discovery
+    source: MITRE ATT&CK Enterprise (verified 2026-09-24)
+
+network_brute_force:
+  - technique_id: T1110
+    technique_name: Brute Force
+    tactic: Credential Access
+    source: MITRE ATT&CK Enterprise (verified 2026-09-24)
+
+network_flood:
+  - technique_id: T1498.001
+    technique_name: "Network Denial of Service: Direct Network Flood"
+    tactic: Impact
+    source: MITRE ATT&CK Enterprise (verified 2026-09-24)
+
+dns_tunneling:
+  - technique_id: T1071.004
+    technique_name: "Application Layer Protocol: DNS"
+    tactic: Command and Control
+    source: MITRE ATT&CK Enterprise (verified 2026-09-24)

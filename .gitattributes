@@ -1,0 +1,7 @@
+# Model artifacts are SHA-256-pinned in their metadata.json. Any line-ending
+# conversion on checkout would change their bytes, and ModelLoader would
+# (correctly) refuse to load them. LightGBM's model format is plain text, so
+# it needs this as much as the binary formats do.
+models/**/*.onnx binary
+models/**/*.lgb.txt binary
+models/**/*.npz binary

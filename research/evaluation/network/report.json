@@ -1,0 +1,268 @@
+{
+  "version": "0.1.0",
+  "data": {
+    "generator": "app.demo.network_flows",
+    "scenario": {
+      "hosts": 80,
+      "hours": 8.0,
+      "benign_flows_per_host_hour": 40
+    },
+    "split_seeds": {
+      "train": 101,
+      "calibration": 202,
+      "test": 303
+    },
+    "flows": {
+      "train": 28369,
+      "calibration": 28144,
+      "test": 27881
+    },
+    "anomalous_flows": {
+      "train": 2769,
+      "calibration": 2544,
+      "test": 2281
+    }
+  },
+  "held_out_from_classifier": "beaconing",
+  "alpha": 0.01,
+  "fusion": {
+    "cut": 0.615,
+    "selected_on": "calibration",
+    "max_fpr": 0.01
+  },
+  "revisions": [
+    {
+      "run": 1,
+      "change": "fusion cut fixed at 0.4 (any single model layer could flag a flow)",
+      "observed_on_test": "fused flow-level FPR 0.0288 vs ~0.01 per layer: the union of layers' false positives",
+      "revision": "fusion cut is now selected on the CALIBRATION split as the lowest cut with FPR <= 0.01; no model, feature or threshold was re-tuned on test"
+    }
+  ],
+  "classifier": {
+    "threshold": 0.00022627515762594597,
+    "platt": [
+      0.5803465187430847,
+      -0.07091443315663735
+    ]
+  },
+  "onnx_parity_max_abs_diff": {
+    "isolation_forest": 2.8946029434484544e-07,
+    "autoencoder": 5.598759087899197e-06
+  },
+  "evaluation": {
+    "statistical": {
+      "flow_level": {
+        "n": 27881,
+        "positives": 2281,
+        "negatives": 25600,
+        "tp": 671,
+        "fp": 282,
+        "tn": 25318,
+        "fn": 1610,
+        "precision": 0.7041,
+        "recall": 0.2942,
+        "f1": 0.415,
+        "false_positive_rate": 0.011,
+        "false_negative_rate": 0.7058,
+        "pr_auc": 0.4984,
+        "roc_auc": 0.7346
+      },
+      "per_category_recall": {
+        "port_scan": 0.5246,
+        "host_sweep": 0.2518,
+        "brute_force": 0.0,
+        "flood": 1.0,
+        "bulk_outbound": 0.0,
+        "dns_tunneling": 0.0,
+        "beaconing": 0.0,
+        "benign_false_positive_rate": 0.011
+      }
+    },
+    "isolation_forest": {
+      "flow_level": {
+        "n": 27881,
+        "positives": 2281,
+        "negatives": 25600,
+        "tp": 225,
+        "fp": 257,
+        "tn": 25343,
+        "fn": 2056,
+        "precision": 0.4668,
+        "recall": 0.0986,
+        "f1": 0.1629,
+        "false_positive_rate": 0.01,
+        "false_negative_rate": 0.9014,
+        "pr_auc": 0.4101,
+        "roc_auc": 0.9017
+      },
+      "per_category_recall": {
+        "port_scan": 0.0041,
+        "host_sweep": 0.1631,
+        "brute_force": 0.0,
+        "flood": 0.787,
+        "bulk_outbound": 1.0,
+        "dns_tunneling": 0.0,
+        "beaconing": 0.0,
+        "benign_false_positive_rate": 0.01
+      }
+    },
+    "autoencoder": {
+      "flow_level": {
+        "n": 27881,
+        "positives": 2281,
+        "negatives": 25600,
+        "tp": 1937,
+        "fp": 270,
+        "tn": 25330,
+        "fn": 344,
+        "precision": 0.8777,
+        "recall": 0.8492,
+        "f1": 0.8632,
+        "false_positive_rate": 0.0105,
+        "false_negative_rate": 0.1508,
+        "pr_auc": 0.9519,
+        "roc_auc": 0.9948
+      },
+      "per_category_recall": {
+        "port_scan": 1.0,
+        "host_sweep": 1.0,
+        "brute_force": 1.0,
+        "flood": 1.0,
+        "bulk_outbound": 1.0,
+        "dns_tunneling": 0.6518,
+        "beaconing": 0.0,
+        "benign_false_positive_rate": 0.0105
+      }
+    },
+    "classifier": {
+      "flow_level": {
+        "n": 27881,
+        "positives": 2281,
+        "negatives": 25600,
+        "tp": 2281,
+        "fp": 283,
+        "tn": 25317,
+        "fn": 0,
+        "precision": 0.8896,
+        "recall": 1.0,
+        "f1": 0.9416,
+        "false_positive_rate": 0.0111,
+        "false_negative_rate": 0.0,
+        "pr_auc": 0.9964,
+        "roc_auc": 0.9997
+      },
+      "per_category_recall": {
+        "port_scan": 1.0,
+        "host_sweep": 1.0,
+        "brute_force": 1.0,
+        "flood": 1.0,
+        "bulk_outbound": 1.0,
+        "dns_tunneling": 1.0,
+        "beaconing": 1.0,
+        "benign_false_positive_rate": 0.0111
+      }
+    },
+    "fused_models": {
+      "flow_level": {
+        "n": 27881,
+        "positives": 2281,
+        "negatives": 25600,
+        "tp": 1937,
+        "fp": 180,
+        "tn": 25420,
+        "fn": 344,
+        "precision": 0.915,
+        "recall": 0.8492,
+        "f1": 0.8809,
+        "false_positive_rate": 0.007,
+        "false_negative_rate": 0.1508,
+        "pr_auc": 0.9566,
+        "roc_auc": 0.9973
+      },
+      "per_category_recall": {
+        "port_scan": 1.0,
+        "host_sweep": 1.0,
+        "brute_force": 1.0,
+        "flood": 1.0,
+        "bulk_outbound": 1.0,
+        "dns_tunneling": 0.6518,
+        "beaconing": 0.0,
+        "benign_false_positive_rate": 0.007
+      },
+      "bootstrap_95ci": {
+        "precision": [
+          0.903,
+          0.9263
+        ],
+        "recall": [
+          0.835,
+          0.8637
+        ],
+        "f1": [
+          0.8709,
+          0.8907
+        ],
+        "false_positive_rate": [
+          0.006,
+          0.0081
+        ]
+      }
+    },
+    "fused_models_plus_behavior_rules": {
+      "flow_level": {
+        "n": 27881,
+        "positives": 2281,
+        "negatives": 25600,
+        "tp": 2281,
+        "fp": 180,
+        "tn": 25420,
+        "fn": 0,
+        "precision": 0.9269,
+        "recall": 1.0,
+        "f1": 0.962,
+        "false_positive_rate": 0.007,
+        "false_negative_rate": 0.0,
+        "pr_auc": null,
+        "roc_auc": null
+      },
+      "per_category_recall": {
+        "port_scan": 1.0,
+        "host_sweep": 1.0,
+        "brute_force": 1.0,
+        "flood": 1.0,
+        "bulk_outbound": 1.0,
+        "dns_tunneling": 1.0,
+        "beaconing": 1.0,
+        "benign_false_positive_rate": 0.007
+      }
+    },
+    "behavior_rules_episode_level": {
+      "findings_by_rule": {
+        "port_scan": 2,
+        "host_sweep": 2,
+        "brute_force": 2,
+        "flood": 2,
+        "bulk_outbound": 2,
+        "dns_tunneling": 2,
+        "beaconing": 2
+      },
+      "findings_on_benign_only_traffic": [],
+      "episodes_in_test_per_category": 2
+    },
+    "latency": {
+      "single_flow_all_layers": {
+        "n": 500,
+        "p50_ms": 10.671,
+        "p95_ms": 13.162,
+        "max_ms": 123.245
+      }
+    }
+  },
+  "environment": {
+    "python": "3.14.2",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "numpy": "2.5.3",
+    "scikit-learn": "1.9.1",
+    "lightgbm": "4.7.0"
+  }
+}

@@ -1,0 +1,76 @@
+# SENTIVRA — network behavior rules (read by app/detectors/network/batch_rules.py).
+#
+# These are threshold rules over a *batch* of flows (an uploaded CSV/PCAP),
+# grouped per source (or per destination, for floods). They catch behavior
+# no single flow shows. Each rule's logic lives in code; the numbers that
+# decide when it fires live here, so an operator can tune them without a
+# code change.
+#
+# The defaults are starting points, not tuned values. The right threshold
+# for "too many distinct ports" depends entirely on the network, which is
+# why these are data. Tune them against a baseline of your own traffic.
+
+rules:
+  port_scan:
+    description: One source probing many ports on one host, mostly with single unanswered or reset connections
+    category: reconnaissance
+    mitre: network_scanning
+    min_distinct_ports: 50
+    max_packets_per_flow: 3
+    min_fraction_minimal_flows: 0.8
+    weight: 0.85
+
+  host_sweep:
+    description: One source touching the same port on many hosts
+    category: reconnaissance
+    mitre: network_scanning
+    min_distinct_hosts: 40
+    max_packets_per_flow: 3
+    weight: 0.8
+
+  brute_force:
+    description: Many short, similar-sized connections from one source to an authentication service
+    category: brute_force
+    mitre: network_brute_force
+    ports: [21, 22, 23, 445, 1433, 3306, 3389, 5432, 5900]
+    min_connections: 40
+    max_mean_duration_s: 10
+    max_bytes_cv: 0.35        # coefficient of variation of bytes per connection: attempts look alike
+    weight: 0.8
+
+  flood:
+    description: Very high aggregate packet rate of small packets toward one destination, from many sources
+    category: denial_of_service
+    mitre: network_flood
+    min_sources: 20
+    window_s: 60              # rate is measured per destination per window
+    min_packets_per_s: 20000
+    max_mean_packet_bytes: 120
+    weight: 0.9
+
+  bulk_outbound:
+    description: Unusually large one-way transfer from an internal host to an external address
+    category: data_exfiltration_indicator
+    mitre: null                 # volume alone doesn't identify the channel; see mitre_mappings.yaml
+    min_bytes: 100000000        # 100 MB
+    min_fwd_bwd_ratio: 5
+    weight: 0.6
+
+  dns_tunneling:
+    description: Many long, high-entropy DNS labels under a single parent domain from one host
+    category: suspicious_dns
+    mitre: dns_tunneling
+    min_queries: 50
+    min_label_length: 30
+    min_label_entropy: 3.5
+    min_fraction_suspicious: 0.6
+    weight: 0.8
+
+  beaconing:
+    description: Connections from one host to one destination at a near-constant interval with near-constant sizes
+    category: beaconing
+    mitre: null                 # a timing pattern, not an ATT&CK technique
+    min_connections: 12
+    tolerance: 0.1              # an interval/size counts as regular within +/-10% of the median
+    min_fraction_regular: 0.8   # share of intervals and sizes that must be regular
+    weight: 0.65

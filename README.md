@@ -15,8 +15,8 @@ Built in phases (see [docs/architecture.md](docs/architecture.md) § Implementat
 | 1 | Repository analysis, architecture, threat model | ✅ Done |
 | 2 | Core contracts — `SecurityEvent`, `DetectionResult`, `BaseDetector`, `ModelRegistry`, `RiskEngine` | ✅ Done |
 | 3 | File detection — hashing, magic bytes, entropy, YARA, ClamAV | ✅ Done |
-| 4 | SQL injection, phishing/URL, prompt injection detectors | ⏳ Next |
-| 5 | Network anomaly ML (Isolation Forest, Autoencoder), PCAP demo | ⏳ Planned |
+| 4 | SQL injection, phishing/URL, prompt injection detectors | 🔄 Groundwork only: rule packs, Unicode/decoding layers, SQL lexer, pickle-free model format, datasets fetched. Detectors not wired yet |
+| 5 | Network anomaly detection: behavior rules, statistical, Isolation Forest, autoencoder, classifier; CSV/PCAP upload | ✅ Done. Models trained on **synthetic** data; see [docs/model-card.md](docs/model-card.md) |
 | 6 | Endpoint-event simulation | ⏳ Planned |
 | 7 | Gmail / Telegram / WhatsApp Business connectors | ⏳ Planned |
 | 8 | Unified risk engine polish, alert management | ⏳ Partially done (engine exists, §7 of architecture.md) |
@@ -57,6 +57,18 @@ curl -X POST http://localhost:8000/api/v1/analyze/file \
 ```
 
 (Create `eicar.txt` with contents `X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*` to try it.)
+
+## Try the network detector
+
+```bash
+# Bundled synthetic sample (tagged DEMO_DATA in the response)
+curl -X POST http://localhost:8000/api/v1/network/demo
+
+# Your own capture or flow export: PCAP/PCAPNG, Sentivra flow CSV, or CICFlowMeter CSV
+curl -X POST http://localhost:8000/api/v1/network/analyze -F "file=@capture.pcap"
+```
+
+The response lists which behavior rules fired (with verified ATT&CK mappings where one applies), which flows at least two model layers agreed on, and why. Uploaded traffic is parsed in memory and discarded after the request.
 
 ## Documentation
 
