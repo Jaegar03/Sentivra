@@ -9,7 +9,7 @@ This document covers three things:
 
 Every claim about the current code was checked against the source; file references are given so they can be re-checked.
 
-The build isn't feature-complete. The Phase 4 detectors (SQL injection, phishing/URL and prompt injection) aren't wired, and the Phase 7 connectors (Gmail, Telegram, WhatsApp) don't exist. The brief puts this document "only after the above works", so treat it as the plan for when they do. Nothing here should be read as a reason to deploy the current build beyond localhost.
+The build isn't feature-complete. The Phase 4 detectors (SQL injection, phishing/URL and prompt injection) aren't wired, so a message that arrives over a Phase 7 webhook is stored and explained but not judged. The Phase 7 connectors themselves exist (three provider-verified webhooks) but process inside the request and need public HTTPS to be reached at all. The brief puts this document "only after the above works", so treat it as the plan for when the rest does. Nothing here should be read as a reason to deploy the current build beyond localhost.
 
 ---
 
@@ -98,7 +98,7 @@ browser ──► next start :3000 (dashboard)
 
 ### Stage 1: one host, containers
 
-**Trigger:** SENTIVRA has to run on a server that someone other than its developer uses. Also a prerequisite for the Phase 7 connectors, whose webhooks need public HTTPS.
+**Trigger:** SENTIVRA has to run on a server that someone other than its developer uses. Also what lets the Phase 7 connectors *receive* from Google, Telegram and Meta — their webhooks need a public HTTPS URL, though each can be exercised locally on localhost without one.
 
 ```
 internet ──TLS──► reverse proxy ──► dashboard container (/)
@@ -178,8 +178,9 @@ The Suricata and Zeek containers are pointless until SENTIVRA can read their out
 | Engines | ClamAV, Suricata, Zeek | App (clamd only) | ClamAV signature mirrors only |
 | Inference | Inference service | App | Nothing |
 
-The backend and workers make no outbound internet calls today. The planned ones are:
-- **Phase 7 connectors:** Gmail API, Telegram Bot API and Meta Graph API, each with least-privilege credentials (Gmail: `gmail.readonly`).
+The backend makes outbound internet calls only when a connector is configured, and only to fixed, code-constant hosts:
+- **Gmail (built):** Google's certificate endpoint (verifying a push JWT), Google's OAuth token endpoint and the Gmail API (`gmail.readonly`), capped at a handful of messages per push.
+- **Planned outbound:** Telegram Bot API (`setWebhook`, and replies if they ever exist) and Meta Graph API (media retrieval if it is ever added), each with least-privilege credentials. Today the connectors only receive.
 - **Opt-in URL enrichment:** part of the unbuilt Phase 4 URL detector, through the existing SSRF guard (`app/security/ssrf_guard.py`). In a deployment, route it through an egress proxy that also blocks internal ranges.
 
 Everything else is denied. In particular, no container may reach the host's container-runtime socket or the cloud metadata endpoint.

@@ -46,7 +46,11 @@ export default function SettingsPage() {
               Every API call needs an OAuth2 access token. The token lives only in this tab and is dropped when it
               expires or the tab closes.
             </p>
-            <p>Webhook connectors (Gmail, Telegram, WhatsApp) aren&apos;t built yet. Keep the backend bound to localhost.</p>
+<p>
+              Webhook connectors (Gmail, Telegram, WhatsApp) are built: each is authenticated by the provider itself,
+              never by your access token. They need a public HTTPS URL to be reached, so keep the backend bound to
+              localhost until you deliberately expose it.
+            </p>
           </CardContent>
         </Card>
       </div>

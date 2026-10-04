@@ -3,7 +3,7 @@
 Base URL: `http://localhost:8000`. Interactive OpenAPI docs are served by the running backend at `/docs`, and the machine-readable schema at `/openapi.json`. The route list below was generated from that schema.
 
 **Security posture of this build.**
-- **Authentication.** Every `/api/` route needs an OAuth2 bearer token with the right scope. Only two routes are open: the token endpoint and the liveness probe. A test walks the OpenAPI schema and fails if any other route answers without a token. See [Authentication](#authentication).
+- **Authentication.** Every `/api/` route needs an OAuth2 bearer token with the right scope, except the four webhook routes below, which authenticate with the provider's own proof instead, and the two routes that are deliberately open (the token endpoint and the liveness probe). A test walks the OpenAPI schema and fails if any other route answers without a token. See [Authentication](#authentication) and [Webhooks](#webhooks).
 - **CORS** is restricted to `SENTIVRA_CORS_ORIGINS`. Credentials (cookies) are never allowed; only the `Authorization` and `Content-Type` request headers are.
 - **Rate limits** are per client IP:
   - `SENTIVRA_RATE_LIMIT_PER_MINUTE` for the API (default 300);
@@ -14,7 +14,7 @@ Base URL: `http://localhost:8000`. Interactive OpenAPI docs are served by the ru
 - **Interactive docs** (`/docs`, `/redoc`, `/openapi.json`) are served in development only.
 - **Audit.** Every analysis and every alert status change is written to the append-only audit log, with the client ID that made the request as the `actor`.
 
-Webhook connectors (Phase 7) aren't built. Until they are, keep the backend bound to localhost, as `uvicorn app.main:app` does by default.
+**Webhook connectors** (Phase 7) are built and verified by their provider, not by a bearer token. Until you expose the backend publicly — which is what Google, Telegram and Meta need in order to reach it — keep it bound to localhost, as `uvicorn app.main:app` does by default. See [Webhooks](#webhooks).
 
 ## Authentication
 
@@ -60,6 +60,7 @@ An ingest-only client, such as an osquery forwarder, can submit telemetry but ca
 - A missing, expired, tampered or foreign-key token gets `401` with `WWW-Authenticate: Bearer`.
 - A token for a client that no longer exists also gets `401`.
 - A valid token without the route's scope gets `403` with `WWW-Authenticate: Bearer error="insufficient_scope"`.
+- The four [webhook](#webhooks) routes ignore any bearer token sent to them and answer `403`/`503` on the provider's verification instead; they never accept SENTIVRA credentials as a substitute for the provider's proof.
 
 **Tokens** are HS256 JWTs.
 - Claims: `iss=sentivra`, `sub` (the client ID), `scope`, `iat`, `exp` and `jti`.
@@ -159,12 +160,81 @@ Parsed flows are discarded after the request.
 
 Batch responses include an `analysis` object with per-layer detail: `sigma`, `auth` and `behavior`.
 
-## Planned, not routed yet
+## Webhooks
 
-These appear in the product brief (§25) and arrive with the Phase 7 connectors. They currently return `404`.
+The Phase 7 connectors: `POST /api/v1/integrations/{gmail,telegram,whatsapp}/webhook`
+plus Meta's `GET` handshake. These four routes are the **only** ones on the API
+without a SENTIVRA bearer token — their callers are Google, Telegram and Meta,
+which cannot hold one. Each is verified by the provider's own proof *before*
+the body is parsed (`backend/app/security/webhooks.py`); after that, the route
+behaves like every other ingestion path: normalize → detectors → risk engine →
+store → audit.
 
-| Method | Path | Planned behavior |
+| Method | Path | How the request is verified |
 |---|---|---|
-| POST | `/api/v1/integrations/gmail/webhook` | Gmail Pub/Sub push, JWT-verified; mail fetched with the `gmail.readonly` scope only |
-| POST | `/api/v1/integrations/telegram/webhook` | Telegram Bot API webhook with the `secret_token` header check; only messages sent to the bot |
-| POST | `/api/v1/integrations/whatsapp/webhook` | WhatsApp Cloud API webhook with `X-Hub-Signature-256` HMAC verification (the helper exists in `backend/app/security/webhooks.py`) |
+| POST | `/api/v1/integrations/gmail/webhook` | Google's RS256 push JWT, signature checked against Google's published certificates (`iss` must be `accounts.google.com`, `exp`/`iat`/`aud` required, algorithm pinned). When `SENTIVRA_GMAIL_PUBSUB_VERIFICATION_TOKEN` is set it is *also* accepted as `?verify_token=` or `X-Goog-Verification-Token`, constant-time compared — the path for a manual `curl` push. |
+| POST | `/api/v1/integrations/telegram/webhook` | `X-Telegram-Bot-Api-Secret-Token` must equal `SENTIVRA_TELEGRAM_WEBHOOK_SECRET_TOKEN` (the `secret_token` given to `setWebhook`), constant-time compared. |
+| GET | `/api/v1/integrations/whatsapp/webhook` | Meta's handshake: `hub.verify_token` must equal `SENTIVRA_WHATSAPP_WEBHOOK_VERIFY_TOKEN`; the `hub.challenge` is echoed back. |
+| POST | `/api/v1/integrations/whatsapp/webhook` | `X-Hub-Signature-256` — HMAC-SHA256 of the **raw** request body with `SENTIVRA_WHATSAPP_APP_SECRET`, constant-time compared. |
+
+**Answers**
+
+| Status | Meaning |
+|---|---|
+| 200 | Verified. The body reports what happened (below). |
+| 400 | Verified request, but the provider payload is not the JSON the provider promises (or the handshake query is incomplete). |
+| 403 | Verification failed: missing or wrong secret, bad signature, or a JWT Google did not sign. |
+| 502 | Verified, but an upstream read failed — the Gmail API could not be read. |
+| 503 | Not configured, or verification could not be completed right now (Google's certificates unreachable). Providers retry rather than the mail being dropped. |
+
+The 200 body is:
+
+```json
+{
+  "status": "ok",
+  "provider": "telegram",
+  "accepted": 1, "duplicates": 0, "ignored": 0,
+  "event_ids": ["…"],
+  "detectors": [],
+  "note": "No detector in this build analyzes message content yet …"
+}
+```
+
+- **`duplicates`** — the event id is derived from the provider's own message id, so a redelivery is recognized and counted, never analyzed twice (no second alert).
+- **`ignored`** — valid traffic with nothing to analyze: delivery/read receipts, Telegram updates that aren't messages.
+- **`detectors`** — which detectors actually ran on the event. It is `[]` today: the phishing, URL and prompt-injection detectors are Phase 4, and the `note` says so rather than implying a clean verdict.
+- Findings are **never echoed back to the provider** — they stay in the alerts/audit APIs.
+- Bodies are analyzed in memory and stored as SHA-256 + size, never as text; see [docs/privacy.md](privacy.md).
+
+### Connecting each provider
+
+**Telegram** (the simplest — a bot token and a secret, no inbound firewall change beyond a public HTTPS URL):
+
+```bash
+curl -X POST "https://api.telegram.org/bot$TOKEN/setWebhook" \
+  -d "url=https://your-host/api/v1/integrations/telegram/webhook" \
+  -d "secret_token=$SENTIVRA_TELEGRAM_WEBHOOK_SECRET_TOKEN"
+```
+
+**WhatsApp Business** — in the Meta App Dashboard, *App > Webhooks > Subscription*:
+
+- Callback URL: `https://your-host/api/v1/integrations/whatsapp/webhook`
+- Verify token: the value of `SENTIVRA_WHATSAPP_WEBHOOK_VERIFY_TOKEN`
+- Subscribe the `messages` field. Every delivery is then signed with the App Secret (`SENTIVRA_WHATSAPP_APP_SECRET`).
+
+**Gmail** — a push arrives through Cloud Pub/Sub, in four steps:
+
+1. Create an OAuth client for the project and grant it **`https://www.googleapis.com/auth/gmail.readonly` only**, then store its client id, client secret and refresh token in `SENTIVRA_GMAIL_OAUTH_*`. Nothing in SENTIVRA ever requests `gmail.modify` or `gmail.send`.
+2. Create a Pub/Sub topic and a subscription with **push** enabled, endpoint `https://your-host/api/v1/integrations/gmail/webhook` (no custom headers needed — Google signs the request).
+3. Start a watch on the mailbox: `users.watch` with `labelIds: ["INBOX"]` and `topicName` (set `SENTIVRA_GMAIL_PUBSUB_TOPIC` to that topic for your own records).
+4. Optional: set `SENTIVRA_GMAIL_PUBSUB_VERIFICATION_TOKEN` and exercise the endpoint before the subscription exists:
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/integrations/gmail/webhook?verify_token=$TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"message":{"data":"eyJlbWFpbEFkZHJlc3MiOiJ5b3VAZXhhbXBsZS5jb20iLCJoaXN0b3J5SWQiOiIxIn0="}}'
+```
+
+(The `data` field is base64 for `{"emailAddress": …, "historyId": …}`; without it the connector reads the newest messages instead.)
+
+Status, including whether a configured connector has actually received anything, is on `GET /api/v1/integrations`.

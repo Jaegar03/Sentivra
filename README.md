@@ -18,7 +18,7 @@ Built in phases (see [docs/architecture.md](docs/architecture.md) § Implementat
 | 4 | SQL injection, phishing/URL, prompt injection detectors | 🔄 Groundwork only: rule packs, Unicode/decoding layers, SQL lexer, pickle-free model format, datasets fetched. Detectors not wired yet |
 | 5 | Network anomaly detection: behavior rules, statistical, Isolation Forest, autoencoder, classifier; CSV/PCAP upload | ✅ Done. Models trained on **synthetic** data; see [docs/model-card.md](docs/model-card.md) |
 | 6 | Endpoint telemetry: osquery pack + normalizer, simulator, Sigma engine, host behavior rules, auth/log rules, Wazuh alert ingestion | ✅ Done, rules only: no endpoint ML model in this version. See [endpoint-agent/README.md](endpoint-agent/README.md) |
-| 7 | Gmail / Telegram / WhatsApp Business connectors | ⏳ Planned |
+| 7 | Gmail / Telegram / WhatsApp Business connectors | ✅ Done: three webhook endpoints, provider-verified (Google push JWT, Telegram `secret_token`, Meta HMAC-SHA256), normalized into the shared pipeline. See [docs/api.md](docs/api.md#webhooks) and [docs/privacy.md](docs/privacy.md) |
 | 8 | Unified risk engine polish, alert management | 🔄 Engine, explanations and alert status (acknowledge/resolve, audited) done; policy engine reserved for later |
 | 9 | Next.js SOC dashboard | ✅ Done: 14 pages, light and dark; see [frontend/README.md](frontend/README.md) |
 | 10 | Security hardening | ✅ OAuth2 client-credentials with per-route scopes, dashboard sign-in, request-body limits, token-endpoint rate limit, strict response headers and a dashboard CSP. See [docs/api.md](docs/api.md#authentication) and the known gaps in [docs/threat-model.md](docs/threat-model.md) |
@@ -79,6 +79,22 @@ curl -H "$AUTH" -X POST http://localhost:8000/api/v1/analyze/file \
 
 (Create `eicar.txt` with contents `X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*` to try it.)
 
+## Try a webhook right now
+
+The three connectors authenticate the **provider**, not a bearer token, so you can exercise the whole path before any real credential exists. In `.env`, put any bot token and a shared secret — `SENTIVRA_TELEGRAM_BOT_TOKEN=123456:local-test` and `SENTIVRA_TELEGRAM_WEBHOOK_SECRET_TOKEN=local-dev-secret` — then restart:
+
+```bash
+curl -s -X POST http://localhost:8000/api/v1/integrations/telegram/webhook \
+  -H 'Content-Type: application/json' \
+  -H 'X-Telegram-Bot-Api-Secret-Token: local-dev-secret' \
+  -d '{"update_id":1,"message":{"message_id":1,"chat":{"id":42,"type":"private"},"date":1767225600,"text":"Please verify: http://example.test/login"}}'
+
+# The event is stored, LIVE-labelled, body hashed rather than kept:
+curl -H "$AUTH" http://localhost:8000/api/v1/events
+```
+
+A forged secret gets `403`, an unconfigured connector gets `503`, and the response says which detectors ran (`[]` today — the message-content detectors are Phase 4, and the note says so rather than implying a clean verdict). Connecting the real providers: [docs/api.md § Webhooks](docs/api.md#webhooks).
+
 ## Try the network detector
 
 ```bash
@@ -124,12 +140,12 @@ Open **Demo mode** in the sidebar and choose *Run all scenarios* to see the whol
 - [docs/repository-analysis.md](docs/repository-analysis.md) — survey of every reference repository named in the project brief, with license/maintenance/decision per repo
 - [docs/architecture.md](docs/architecture.md) — system design, data flow, detector matrix, model registry
 - [docs/threat-model.md](docs/threat-model.md) — STRIDE analysis of Sentivra itself, plus stated per-detector limitations
-- [docs/api.md](docs/api.md) — authentication and scopes, request limits, every endpoint (including the ones that answer 501) and the webhooks still to come
+- [docs/api.md](docs/api.md) — authentication and scopes, request limits, every endpoint (including the ones that answer 501), and the [webhook connectors](docs/api.md#webhooks) with their setup steps
 - [docs/model-card.md](docs/model-card.md) — every model's data, splits, metrics, evaluation date and limitations
 - [endpoint-agent/README.md](endpoint-agent/README.md) — osquery pack deployment, Wazuh ingestion, future native agent
 - [docs/future-deployment.md](docs/future-deployment.md) — staged container/cloud architecture, the code changes each stage needs, and the security requirements that carry over (design only)
 - [docs/future-automation.md](docs/future-automation.md) — Detection → Policy Engine → Human Approval → Automation: reserved contracts, action catalog, guardrails (design only)
-- docs/privacy.md — per-integration data handling; not written yet (arrives with the Phase 7 connectors)
+- [docs/privacy.md](docs/privacy.md) — per-integration data handling: what each connector can see, what it stores (hash + metadata, never the body) and what it can never do
 
 ## Principles
 

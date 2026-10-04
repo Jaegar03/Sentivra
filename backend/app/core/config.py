@@ -131,8 +131,12 @@ class Settings(BaseSettings):
     url_enrichment_max_redirects: int = 5
 
     # Gmail (least privilege: gmail.readonly only — see docs/privacy.md)
+    # The push endpoint proves the request is Google's (RS256 JWT against
+    # Google's published certs). The refresh token is how the connector then
+    # reads the mailbox it was watching, always with gmail.readonly.
     gmail_oauth_client_id: str = ""
     gmail_oauth_client_secret: str = ""
+    gmail_oauth_refresh_token: str = ""
     gmail_pubsub_topic: str = ""
     gmail_pubsub_verification_token: str = ""
 

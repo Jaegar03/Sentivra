@@ -34,3 +34,11 @@ research/datasets/generated/
 
 # Local runtime state: generated API signing key and client-secret hashes
 .sentivra/
+
+# Freebuff tool state
+.freebuff/
+
+# Local-only documents — kept on this machine, never pushed to GitHub
+PRESENTATION.md
+PRESENTATION.pptx
+WALKTHROUGH.md

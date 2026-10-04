@@ -59,8 +59,13 @@ def test_metrics_aggregates_and_explained_score(app_client):
 
 def test_integrations_report_honest_status(app_client):
     items = {i["name"]: i for i in app_client.get("/api/v1/integrations").json()}
+    # The webhook connectors exist and say which credentials they are missing;
+    # nothing claims to be connected without them (test_webhooks.py covers the
+    # configured and receiving states).
     for name in ("Gmail", "Telegram", "WhatsApp Business"):
-        assert items[name]["status"] == "Not implemented"
+        assert items[name]["status"] == "Not configured"
+        assert "not configured" in items[name]["detail"]
+        assert "SENTIVRA_" in items[name]["detail"]
     assert items["Suricata"]["status"] == "Not implemented"
     assert items["osquery"]["status"] == "Available"
     assert items["YARA"]["status"] == "Available"

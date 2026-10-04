@@ -34,27 +34,32 @@ The normalizer (`backend/app/events/osquery.py`) recognizes rows by these query 
        "SELECT CASE WHEN platform = 'windows' THEN 'windows' WHEN platform = 'darwin' THEN 'darwin' ELSE 'linux' END AS os FROM os_version;"
    ] } }
    ```
-4. Send the results log to Sentivra. With the default filesystem logger, that file is `osqueryd.results.log` (NDJSON):
+4. Send the results log to Sentivra. With the default filesystem logger, that file is `osqueryd.results.log` (NDJSON). The API needs a token with the `ingest` scope. Give each forwarder its own client (for example `osquery-agent:<secret>:ingest` in `SENTIVRA_OAUTH_CLIENTS`) so it can submit telemetry but can't read alerts; see [docs/api.md](../docs/api.md#authentication):
    ```bash
-   curl -X POST http://localhost:8000/api/v1/endpoint/osquery -F "file=@/var/log/osquery/osqueryd.results.log"
+   TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/token \
+     -d grant_type=client_credentials -d client_id=osquery-agent -d "client_secret=$SECRET" \
+     | python -c "import json,sys; print(json.load(sys.stdin)['access_token'])")
+   curl -H "Authorization: Bearer $TOKEN" -X POST http://localhost:8000/api/v1/endpoint/osquery \
+     -F "file=@/var/log/osquery/osqueryd.results.log"
    ```
 
 A demonstration fleet runs through the same code path, and its telemetry is tagged SIMULATED:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/endpoint/demo
+curl -H "Authorization: Bearer $TOKEN" -X POST http://localhost:8000/api/v1/endpoint/demo   # needs the analyze scope
 ```
 
 ### What happens to the data
 
-Uploaded rows are normalized and analyzed in memory: Sigma rules, host behavior rules against the fleet baseline, and authentication rules. After that, only the batch summary, the detection results and the audit record are persisted; the raw rows are discarded when the request ends. Per-integration data handling will be documented in docs/privacy.md, written with the Phase 7 connectors.
+Uploaded rows are normalized and analyzed in memory: Sigma rules, host behavior rules against the fleet baseline, and authentication rules. After that, only the batch summary, the detection results and the audit record are persisted; the raw rows are discarded when the request ends. Per-integration data handling is in [docs/privacy.md](../docs/privacy.md), written with the Phase 7 connectors (it covers the Gmail, Telegram and WhatsApp webhooks; the osquery rule is the sentence above).
 
 ## 2. Wazuh (works today, alerts only)
 
 Sentivra accepts Wazuh's `alerts.json` (one alert per line) on the log endpoint:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/logs/analyze -F "file=@/var/ossec/logs/alerts/alerts.json"
+curl -H "Authorization: Bearer $TOKEN" -X POST http://localhost:8000/api/v1/logs/analyze \
+  -F "file=@/var/ossec/logs/alerts/alerts.json"
 ```
 
 Wazuh alerts are treated as **another engine's verdict**. Each one is passed through as evidence, labeled with Wazuh's own rule ID and level. Wazuh MITRE tags are resolved against the ATT&CK index, and revoked IDs are remapped. Alerts that carry Windows event data or authentication groups also feed Sentivra's own Sigma and authentication rules.
@@ -82,7 +87,7 @@ The planned agent keeps the event contract osquery already satisfies, so the det
 ```
 
 Design commitments:
-- **Read-only.** The agent observes and never acts on the host. Isolation, killing processes, deleting files and similar actions belong to the future automation layer behind human approval ([docs/architecture.md](../docs/architecture.md) §11), not to the agent.
+- **Read-only.** The agent observes and never acts on the host. Isolation, killing processes, deleting files and similar actions belong to the future automation layer behind human approval ([docs/future-automation.md](../docs/future-automation.md)), not to the agent.
 - **Least privilege.** The agent gets only the OS permissions each collector needs, and each collector can be disabled.
 - **Enrollment and transport.** Each agent enrolls with a one-time secret and receives its own key, which can be revoked on its own. Uploads use mutual TLS. The agent opens no listening port.
 - **Privacy.** Command lines and file paths can contain personal data, so collection is configurable per table, and the same retention limits as other telemetry apply.

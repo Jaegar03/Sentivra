@@ -32,7 +32,17 @@ async def run_pipeline(
     db: Session,
     registry: DetectorRegistry,
     actor: str | None = None,
+    persist: SecurityEvent | None = None,
 ) -> tuple[list[DetectionResult], RiskAssessment]:
+    """Run every applicable detector on `event`, then persist.
+
+    `persist` lets a caller store a different (usually redacted) copy of the
+    event than the one detectors analyzed — the webhook connectors hand the
+    detectors the message body and persist hash + metadata instead, so raw
+    message content never reaches the database (README principle 4,
+    docs/privacy.md). It defaults to `event`, so every other caller is
+    unchanged.
+    """
     detectors = registry.applicable_to(event)
 
     async def _run_one(detector) -> DetectionResult | None:
@@ -47,7 +57,7 @@ async def run_pipeline(
 
     assessment = _risk_engine.assess(event.event_id, findings)
 
-    EventRepository(db).create_if_absent(event)
+    EventRepository(db).create_if_absent(persist or event)
     if assessment.severity.rank > 0:  # only persist an alert when there's something to alert on
         AlertRepository(db).create(assessment)
     audit_service.record(

@@ -29,6 +29,7 @@ from app.api import (
     models,
     network,
     rules,
+    webhooks,
 )
 from app.core.config import get_settings
 from app.core.database import init_db
@@ -125,6 +126,7 @@ def create_app() -> FastAPI:
     app.include_router(metrics.router)
     app.include_router(audit.router)
     app.include_router(integrations.router)
+    app.include_router(webhooks.router)
 
     return app
 

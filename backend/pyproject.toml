@@ -39,6 +39,10 @@ dependencies = [
     "scapy>=2.6",          # PCAP parsing for the upload demo (GPL-2.0, used as a library)
     # API authentication (Phase 10)
     "pyjwt>=2.8",          # signed access tokens for the OAuth2 client-credentials grant
+    # Provider webhook authentication (Phase 7): RS256 verification of the
+    # Gmail Pub/Sub push JWT against Google's published certificates. PyJWT
+    # only implements RS256 when `cryptography` is present.
+    "cryptography>=42",
 ]
 
 [project.optional-dependencies]

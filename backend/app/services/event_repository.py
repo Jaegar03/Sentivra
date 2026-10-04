@@ -7,7 +7,7 @@ this file's call sites elsewhere in the app.
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.events.schema import SecurityEvent
@@ -39,6 +39,15 @@ class EventRepository:
 
     def get(self, event_id: str) -> EventORM | None:
         return self._db.get(EventORM, event_id)
+
+    def count_by_source(self, source: str) -> int:
+        """How many events one source has delivered. Indexed column only —
+        this is what tells `GET /api/v1/integrations` whether a configured
+        webhook is actually receiving data ("Connected") or merely ready
+        ("Available").
+        """
+        stmt = select(func.count()).select_from(EventORM).where(EventORM.source == source)
+        return int(self._db.execute(stmt).scalar_one())
 
     def summaries(self, event_ids: list[str]) -> dict[str, dict]:
         """Source, source type and event type for each id, from the indexed

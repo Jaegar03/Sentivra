@@ -13,7 +13,19 @@ import pytest
 
 from tests.conftest import CLIENT_SECRETS, token_for
 
-PUBLIC = {("POST", "/api/v1/auth/token"), ("GET", "/api/v1/health/live")}
+# Routes that carry no SENTIVRA bearer token on purpose. The webhook rows are
+# authenticated by the *provider's* proof instead — Google's push JWT, Telegram's
+# secret_token header, Meta's HMAC signature — proved in test_webhooks.py. They
+# live here so a route added later with neither a scope nor a provider check
+# still fails the test below.
+PUBLIC = {
+    ("POST", "/api/v1/auth/token"),
+    ("GET", "/api/v1/health/live"),
+    ("POST", "/api/v1/integrations/gmail/webhook"),
+    ("POST", "/api/v1/integrations/telegram/webhook"),
+    ("GET", "/api/v1/integrations/whatsapp/webhook"),
+    ("POST", "/api/v1/integrations/whatsapp/webhook"),
+}
 
 
 def test_every_api_route_requires_a_token_unless_explicitly_public(anon_client):

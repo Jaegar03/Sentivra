@@ -14,7 +14,7 @@ Methodology: STRIDE per trust boundary, plus an explicit "what this does NOT det
    ▼
 [Boundary A — Ingress]  ──────────────────────────────────────────
    │  body-size limit → rate limit → OAuth2 bearer token + scope → FastAPI handlers
-   │  (webhooks, when built: provider signature verification instead of a bearer token)
+   │  (webhooks: provider signature verification instead of a bearer token)
    ▼
 [Trusted-but-limited: Sentivra backend process]
    │  detectors, risk engine, ML inference
@@ -39,9 +39,9 @@ Methodology: STRIDE per trust boundary, plus an explicit "what this does NOT det
 
 | Threat | STRIDE | Mitigation | Where enforced |
 |---|---|---|---|
-| Forged webhook claiming to be Meta/Telegram | Spoofing | HMAC-SHA256 verification over raw body (WhatsApp `X-Hub-Signature-256`), Telegram secret-token header check | `backend/app/security/webhooks.py`, per-integration `webhook.py` |
-| Replayed/old webhook payload | Spoofing/Tampering | Timestamp/nonce freshness check where the provider supplies one; idempotent event_id dedup at the repository layer | `EventRepository.create_if_absent` |
-| Unauthenticated use of the API (reading alerts, running analyses, changing alert status) | Spoofing/Info disclosure/EoP | OAuth2 client-credentials. Every `/api/` route needs a bearer token except the token endpoint and the liveness probe. A test walks the OpenAPI schema and fails on any route that answers without a token | `backend/app/security/auth.py`, `backend/tests/test_auth.py` |
+| Forged webhook claiming to be Meta/Telegram/Google | Spoofing | HMAC-SHA256 over the raw body (WhatsApp `X-Hub-Signature-256`), Telegram secret-token header check, Google's RS256 push JWT verified against Google's published certificates (optional shared verification token alongside it for Gmail) | `backend/app/security/webhooks.py`, per-integration `webhook.py`, `backend/tests/test_webhooks.py` |
+| Replayed/old webhook payload | Spoofing/Tampering | Deterministic event id derived from the provider's own message id, checked before analysis and deduplicated at the repository layer | `backend/app/integrations/common.py`, `EventRepository.create_if_absent` |
+| Unauthenticated use of the API (reading alerts, running analyses, changing alert status) | Spoofing/Info disclosure/EoP | OAuth2 client-credentials. Every `/api/` route needs a bearer token except the token endpoint, the liveness probe and the four provider webhooks (which carry a provider proof instead — never a SENTIVRA credential). A test walks the OpenAPI schema and fails on any route that answers without a token | `backend/app/security/auth.py`, `backend/tests/test_auth.py` |
 | A compromised or over-trusted client doing more than its job | EoP | Per-route scopes (`read`, `analyze`, `ingest`, `alerts:write`). An ingest-only agent can't read alerts back. Scopes are re-checked against the client's configuration on every request | `backend/app/security/auth.py` |
 | Forged or tampered token (`alg: none`, re-signed, edited scope claim) | Spoofing/Tampering | HS256 with the algorithm pinned at verification; `exp`, `iat`, `iss` and `sub` required; tokens for unknown clients rejected | `backend/app/security/auth.py` |
 | Signing key that anyone can read (the old default, or the `.env.example` placeholder copied as-is) | Spoofing | Unset, repo-published and too-short (< 256-bit) keys are never used. Development generates a random per-install key in `.sentivra/`; other environments refuse to start | `backend/app/core/config.py`, `backend/app/security/auth.py` |
@@ -72,14 +72,14 @@ These are known gaps in this build, not solved problems. [future-deployment.md](
 - **Clients, not people.** There are no user accounts or roles. Whoever holds the `dashboard` secret has all four scopes, and the audit log records the client ID, not a person.
 - **The development bootstrap prints a secret to the log.** The first-start `dashboard` secret appears once in the backend's log output. Anyone who can read that log can use it. Outside development there's no bootstrap: clients must be configured explicitly.
 - **The dashboard's CSP allows inline scripts.** Statically rendered Next.js pages inline their RSC payload, so `script-src` includes `'unsafe-inline'`. The policy's value is in `connect-src`, `img-src`, `frame-ancestors`, `base-uri` and `object-src`, not in blocking injected script outright. A nonce-based policy would need every page rendered per request.
-- **Webhook ingress doesn't exist yet.** Gmail, Telegram and WhatsApp will authenticate with provider signatures rather than bearer tokens. Their threats are listed in §3, but those mitigations are designs, not code, until Phase 7. The WhatsApp HMAC helper exists and is unit-tested.
+- **Webhook ingress exists, with residual gaps.** The three connectors verify their provider before parsing (JWT / secret token / HMAC, `backend/app/security/webhooks.py`, tested in `backend/tests/test_webhooks.py`), and answer `503` when a connector or its verification material is not configured. What is *not* covered: there is no per-provider IP allowlist (Google/Meta/Telegram publish ranges, but the rate limiter keys on IP generally and behind a proxy all clients share one bucket); Gmail's JWT `aud` claim is required to be present but not pinned to this deployment's public URL, since that URL isn't known to the code — the signature plus the mailbox's own OAuth credentials are the gate; and processing runs inside the request, so a slow provider read holds the connection open (a job queue is the staged fix in [future-deployment.md](future-deployment.md) §3).
 
 ### Boundary B — Persistence
 
 | Threat | STRIDE | Mitigation |
 |---|---|---|
 | SQL injection into Sentivra's own SQLite via crafted event content | Tampering | SQLAlchemy ORM/parameterized queries exclusively — no raw string-formatted SQL, anywhere, including in the `SQLInjectionDetector`'s own test harness |
-| Sensitive raw content (email body, file bytes) retained indefinitely, becoming a high-value breach target | Info disclosure | Files: hash + metadata + result stored, not raw bytes, by default (brief §30). Message bodies: retained only as long as documented per-integration in `docs/privacy.md`, with a configurable retention window |
+| Sensitive raw content (email body, file bytes) retained indefinitely, becoming a high-value breach target | Info disclosure | Files: hash + metadata + result stored, not raw bytes, by default (brief §30). Message bodies: never stored at all — detectors analyze them in memory during the request, and the persisted event carries SHA-256 + length instead (`docs/privacy.md`) |
 | Local DB file readable by other local users/processes | Info disclosure | Documented OS-level file-permission guidance in deployment docs; out of scope to enforce cross-platform from the app itself in this phase — stated as a known limitation, not silently ignored |
 | Audit log tampering (an attacker who gains code-execution rewrites history) | Repudiation | Audit log is append-only at the ORM level (no update/delete API exposed for `audit_log` rows); full compromise of the host defeats this — documented as a limitation, not claimed as tamper-proof |
 
@@ -107,7 +107,7 @@ These are known gaps in this build, not solved problems. [future-deployment.md](
 ### Gmail
 - **Threat:** Over-scoped OAuth grant lets Sentivra (or an attacker who compromises it) send email or modify the mailbox. **Mitigation:** `gmail.readonly` only, enforced at the OAuth consent/token-request layer (brief §13).
 - **Threat:** Stolen OAuth refresh token gives long-lived mailbox read access. **Mitigation:** token stored via the standard credential-handling path (env-var-sourced secret store in this phase, never committed/logged), documented rotation guidance.
-- **Threat:** Sentivra's own Pub/Sub webhook endpoint spoofed to inject fake "new mail" events. **Mitigation:** Pub/Sub push messages are JWT-verified against Google's published certs before any event is normalized.
+- **Threat:** Sentivra's own Pub/Sub webhook endpoint spoofed to inject fake "new mail" events. **Mitigation:** Pub/Sub push messages are JWT-verified against Google's published certs before any event is normalized; a configured `SENTIVRA_GMAIL_PUBSUB_VERIFICATION_TOKEN` is an additional constant-time-compared secret. A push that verifies but cannot be processed (no read credentials, Google unreachable) answers `503` so Pub/Sub retries instead of the notification being acknowledged and lost.
 
 ### Telegram
 - **Threat:** Someone assumes the bot sees all of a user's private Telegram traffic. **Mitigation:** documented explicitly, in-product and in `docs/privacy.md`, that the Bot API only ever sees messages sent directly to the bot or in groups/channels it is a member of — never arbitrary private chats (brief §14).
@@ -115,7 +115,7 @@ These are known gaps in this build, not solved problems. [future-deployment.md](
 
 ### WhatsApp Business
 - **Threat:** Webhook forged without a valid app secret. **Mitigation:** HMAC-SHA256 over the raw request body against `X-Hub-Signature-256`, computed with `hmac.compare_digest` (timing-safe), before any parsing occurs.
-- **Threat:** Media retrieval used to exfiltrate arbitrary attacker-hosted URLs. **Mitigation:** media is only ever fetched via Meta's authenticated media-ID endpoint, never an arbitrary URL from the payload — closes the same SSRF class as Boundary A.
+- **Threat:** Media retrieval used to exfiltrate arbitrary attacker-hosted URLs. **Mitigation:** this connector fetches **no** media at all — a media message is stored as Meta's metadata (type, filename, media id, Meta's SHA-256) only. If media download is ever added, it must go through Meta's authenticated media-ID endpoint, never an arbitrary URL from the payload — closing the same SSRF class as Boundary A.
 
 ---
 

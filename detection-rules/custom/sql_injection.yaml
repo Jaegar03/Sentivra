@@ -11,10 +11,13 @@
 # combines weights across rules with a noisy-OR, then fuses the result
 # with the lexical-structure layer and the ML classifier.
 #
-# Signatures are one layer of three. They are tuned to avoid firing on
+# Signatures are one layer of three. They are written to avoid firing on
 # ordinary text that happens to contain SQL words ("select a plan",
-# "Union Station", "O'Brien", "drop me a line"); the tests in
-# backend/tests/test_sql_injection.py pin those false-positive cases down.
+# "Union Station", "O'Brien", "drop me a line"). The SQLInjectionDetector
+# that uses this pack isn't wired yet (POST /api/v1/analyze/sql answers
+# 501). Until it is, backend/tests/test_rule_packs.py only checks that this
+# file parses and every pattern compiles; the false-positive cases above get
+# pinned by tests when the detector lands.
 
 rules:
   # ---- UNION-based ----------------------------------------------------------

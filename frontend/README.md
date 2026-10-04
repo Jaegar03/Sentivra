@@ -45,7 +45,8 @@ No cookies are used, so cross-site request forgery doesn't apply. The page heade
 | Network | PCAP/CSV upload and the synthetic demo sample, with per-layer results and behavior findings |
 | Files | File upload and the EICAR test file |
 | Endpoint | Simulated fleet, osquery results upload and log upload |
-| Messages, Prompt Security | State plainly that these detectors and connectors aren't built yet |
+| Messages | What the Gmail, Telegram and WhatsApp webhooks delivered: sender, subject, extracted URLs, attachment metadata and the body hash (bodies are never stored), plus each connector's status. Says plainly that no detector analyzes message content yet, so a message is never shown as "clean" |
+| Prompt Security | States plainly that the detector isn't built, and shows the API's real 501 response |
 | Models, Rules, Integrations, Audit Log, Settings | Registry, rule inventory, real integration status, audit trail (with the acting client), connection and session info |
 | Demo mode | Runs every available scenario; results are labeled Demo data or Simulated |
 

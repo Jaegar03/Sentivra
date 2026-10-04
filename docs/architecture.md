@@ -13,7 +13,7 @@
 3. **Detectors are independently swappable.** Adding, removing, or retraining a detector must not require touching the API layer, the frontend, or other detectors. Enforced by the `BaseDetector` interface ([§4](#4-detector-layer)) and the `ModelRegistry` ([§6](#6-model-registry)).
 4. **Local-first, no forced infrastructure.** SQLite, in-process detectors, no Docker/Redis/Celery/Kafka in this phase (see [Environment Constraints](#2-environment-constraints)). The seams for that infrastructure exist without requiring it.
 5. **Explainable by construction.** A `DetectionResult` without evidence is treated as a bug, not an edge case — the schema makes `evidence: []` require a non-empty list at the point severity exceeds `LOW`.
-6. **Privacy is a first-class architectural concern**, not a policy bolt-on: raw file bytes and raw message bodies are processed in memory and are not retained by default — only hash + metadata + detection result persist (docs/privacy.md, per-integration detail, is written with the Phase 7 connectors).
+6. **Privacy is a first-class architectural concern**, not a policy bolt-on: raw file bytes and raw message bodies are processed in memory and are not retained by default — only hash + metadata + detection result persist ([privacy.md](privacy.md), per-integration detail, written with the Phase 7 connectors).
 
 ---
 

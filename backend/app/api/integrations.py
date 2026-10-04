@@ -2,36 +2,52 @@
 is planned (brief §32: "Gmail — Not Connected", never a fake green light).
 
 Status values:
-  Connected       a live integration is receiving data (none in this version)
-  Available       an ingestion path that works today (upload endpoints)
-  Not configured  an optional engine that isn't installed or pointed at
+  Connected       a configured webhook that has already delivered at least one
+                  event (counted from the events table, not assumed)
+  Available       an ingestion path that works today: the upload endpoints,
+                  and a configured connector whose endpoint is ready but has
+                  received nothing yet
+  Not configured  an engine or connector missing its credentials or paths
   Not implemented a connector that doesn't exist yet
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
 
-from app.api.deps import get_detector_registry
+from app.api.deps import get_db, get_detector_registry
 from app.core.config import get_settings
 from app.detectors.registry import DetectorRegistry
 from app.security.auth import require_scopes
+from app.services.event_repository import EventRepository
 
 router = APIRouter(prefix="/api/v1", tags=["integrations"], dependencies=[Depends(require_scopes("read"))])
 
 
 @router.get("/integrations")
-async def list_integrations(registry: DetectorRegistry = Depends(get_detector_registry)) -> list[dict]:
+async def list_integrations(db: Session = Depends(get_db),
+                            registry: DetectorRegistry = Depends(get_detector_registry)) -> list[dict]:
     s = get_settings()
 
-    def connector(name: str, credentials: bool, scope: str) -> dict:
-        return {
-            "name": name, "kind": "messaging", "status": "Not implemented",
-            "credentials_configured": credentials,
-            "detail": (f"Connector not built yet (planned: {scope}). "
-                       + ("Credentials are set in the environment but nothing uses them yet."
-                          if credentials else "No credentials configured.")),
-        }
+    def messaging(name: str, source: str, configured: bool, missing: list[str], scope: str) -> dict:
+        """A webhook connector: configured + never heard from is 'Available';
+        configured + delivered events is 'Connected'; anything less says
+        exactly which variable is missing rather than claiming coverage."""
+        received = EventRepository(db).count_by_source(source) if configured else 0
+        endpoint = f"POST /api/v1/integrations/{source}/webhook"
+        if not configured:
+            status, detail = "Not configured", (
+                f"The endpoint exists ({endpoint}) but the connector is not configured: set "
+                + ", ".join(missing) + f". {scope}.")
+        elif received:
+            status, detail = "Connected", (
+                f"Verified webhooks accepted at {endpoint}; {received} message event(s) stored. {scope}.")
+        else:
+            status, detail = "Available", (
+                f"Webhook endpoint ready at {endpoint}; no messages received yet. {scope}.")
+        return {"name": name, "kind": "messaging", "status": status,
+                "credentials_configured": configured, "detail": detail}
 
     async def engine(detector_name: str, label: str) -> dict:
         detector = registry.get(detector_name)
@@ -43,10 +59,23 @@ async def list_integrations(registry: DetectorRegistry = Depends(get_detector_re
                 "engine_version": availability.engine_version}
 
     return [
-        connector("Gmail", bool(s.gmail_oauth_client_id), "OAuth2 with gmail.readonly, Pub/Sub watch"),
-        connector("Telegram", bool(s.telegram_bot_token), "official Bot API webhook, messages sent to the bot only"),
-        connector("WhatsApp Business", bool(s.whatsapp_app_secret),
-                  "official Cloud API webhook with X-Hub-Signature-256 verification"),
+        messaging("Gmail", "gmail",
+                  configured=bool(s.gmail_oauth_client_id and s.gmail_oauth_client_secret
+                                  and s.gmail_oauth_refresh_token),
+                  missing=["SENTIVRA_GMAIL_OAUTH_CLIENT_ID", "SENTIVRA_GMAIL_OAUTH_CLIENT_SECRET",
+                           "SENTIVRA_GMAIL_OAUTH_REFRESH_TOKEN"],
+                  scope="OAuth2 with gmail.readonly; the Pub/Sub push is JWT-verified against Google's "
+                        "certificates, and message bodies are hashed, not stored"),
+        messaging("Telegram", "telegram",
+                  configured=bool(s.telegram_bot_token and s.telegram_webhook_secret_token),
+                  missing=["SENTIVRA_TELEGRAM_BOT_TOKEN", "SENTIVRA_TELEGRAM_WEBHOOK_SECRET_TOKEN"],
+                  scope="official Bot API webhook authenticated with the secret_token header; only "
+                        "messages sent to the bot are ever received"),
+        messaging("WhatsApp Business", "whatsapp",
+                  configured=bool(s.whatsapp_app_secret and s.whatsapp_webhook_verify_token),
+                  missing=["SENTIVRA_WHATSAPP_APP_SECRET", "SENTIVRA_WHATSAPP_WEBHOOK_VERIFY_TOKEN"],
+                  scope="official Cloud API webhook with X-Hub-Signature-256 verification, direct to "
+                        "Meta's Graph API; media bytes are never fetched"),
         {"name": "osquery", "kind": "telemetry", "status": "Available",
          "detail": "Upload osqueryd.results.log to POST /api/v1/endpoint/osquery (pack in endpoint-agent/osquery/)"},
         {"name": "Wazuh", "kind": "telemetry", "status": "Available",
