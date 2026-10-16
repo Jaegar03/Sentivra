@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createRequestKey, durationMs, runOutcome, topologyRoute } from "@/lib/simulation";
+import { createRequestKey, durationMs, presentationStage, runOutcome, topologyRoute } from "@/lib/simulation";
 import type { SimulationRun } from "@/types/api";
 
 function run(overrides: Partial<SimulationRun> = {}): SimulationRun {
@@ -35,11 +35,18 @@ describe("simulation presentation rules", () => {
     expect(runOutcome(run({ status: "FAILED", detection_state: "ANALYSIS_FAILED", enforcement_decision: "SIMULATED_UNAVAILABLE" })).kind).toBe("failed");
   });
 
-  it("routes only terminal decisions and never treats unavailable analysis as allow", () => {
+  it("routes running and terminal decisions without treating unavailable analysis as allow", () => {
     expect(topologyRoute("allow")?.endpoint).toBe("resource");
     expect(topologyRoute("block")?.endpoint).toBe("enforce");
     expect(topologyRoute("unavailable")?.endpoint).toBe("detector");
-    expect(topologyRoute("running")).toBeNull();
+    expect(topologyRoute("running")?.endpoint).toBe("detector");
+    expect(topologyRoute("running", "network-anomaly")?.nodes).toEqual(["source", "engine", "detector"]);
+  });
+
+  it("exposes a visible presentation stage before the backend result arrives", () => {
+    expect(presentationStage(0, "running")).toBe("EVENT MOVING TO GATEWAY");
+    expect(presentationStage(.7, "block")).toBe("RISK ASSESSMENT");
+    expect(presentationStage(.9, "block")).toBe("SIMULATED BLOCK");
   });
 
   it("derives duration from trusted timestamps when duration is absent", () => {

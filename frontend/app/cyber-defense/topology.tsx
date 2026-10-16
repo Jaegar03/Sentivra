@@ -1,10 +1,10 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Activity, Database, Gauge, GitBranch, LockKeyhole, Server, Shield, Square } from "lucide-react";
 
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
-import { detectionLabel, displayedScenario, runOutcome, topologyRoute } from "@/lib/simulation";
+import { detectionLabel, displayedScenario, presentationStage, runOutcome, topologyRoute } from "@/lib/simulation";
 import type { SimulationRun, SimulationScenario } from "@/types/api";
 import styles from "./command-center.module.css";
 
@@ -21,12 +21,19 @@ const nodes = [
 
 type NodeId = typeof nodes[number]["id"];
 
-export function Topology({ run, scenarios, busy }: { run: SimulationRun | null; scenarios: SimulationScenario[]; busy: boolean }) {
+export function Topology({ run, scenarios, busy, scenarioId }: { run: SimulationRun | null; scenarios: SimulationScenario[]; busy: boolean; scenarioId?: string }) {
   const [selected, setSelected] = useState<NodeId>("engine");
   const reducedMotion = useReducedMotion();
   const id = useId();
   const outcome = runOutcome(run);
-  const route = topologyRoute(outcome.kind);
+  const activeScenarioId = run?.scenario_id ?? scenarioId;
+  const route = topologyRoute(outcome.kind, activeScenarioId) ?? (busy ? topologyRoute("running", activeScenarioId) : null);
+  const pathRef = useRef<SVGPathElement>(null);
+  const frameRef = useRef<number | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [particlePoint, setParticlePoint] = useState<{ x: number; y: number } | null>(null);
+  const routePath = route?.path;
+  const routeEndpoint = route?.endpoint;
   const metadata = displayedScenario(run, scenarios);
   const selectedNode = nodes.find((node) => node.id === selected)!;
   const selectedDetail = !run ? "Run a scenario or select a stored execution to inspect its recorded details." : ({
@@ -40,11 +47,43 @@ export function Topology({ run, scenarios, busy }: { run: SimulationRun | null; 
     store: `Execution: ${run.execution_id}. Event: ${run.event_id ?? "not persisted"}. Alert: ${run.alert_id ?? "none"}.`,
   } satisfies Record<NodeId, string>)[selected];
 
+  useEffect(() => {
+    if (!routePath || reducedMotion) {
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+      return;
+    }
+    const started = performance.now();
+    const duration = 5_500;
+    let cancelled = false;
+    const tick = (now: number) => {
+      if (cancelled) return;
+      const next = Math.min(1, (now - started) / duration);
+      setProgress(next);
+      const path = pathRef.current;
+      if (path) {
+        const point = path.getPointAtLength(path.getTotalLength() * next);
+        setParticlePoint({ x: point.x, y: point.y });
+      }
+      if (next < 1) frameRef.current = requestAnimationFrame(tick);
+      else frameRef.current = null;
+    };
+    frameRef.current = requestAnimationFrame(tick);
+    return () => {
+      cancelled = true;
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    };
+  }, [routePath, routeEndpoint, run?.execution_id, busy, reducedMotion]);
+
+  const particle = route && !reducedMotion ? particlePoint : null;
+  const stage = busy ? presentationStage(progress, "running") : presentationStage(progress, outcome.kind);
+
   return (
     <div className={styles.topology} data-tone={outcome.tone}>
       <div className={styles.canvasHeading}>
         <span><span className={styles.statusDot} /> Conceptual event path</span>
-        <span>{busy ? "Awaiting backend response" : outcome.label}</span>
+        <span aria-live="polite">{stage}</span>
       </div>
       <div className={styles.canvasScroll}>
         <svg viewBox="0 0 720 360" className={styles.canvas} role="listbox" aria-label="Interactive simulation topology: eight conceptual nodes" aria-describedby={`${id}-topology-help`}>
@@ -59,8 +98,8 @@ export function Topology({ run, scenarios, busy }: { run: SimulationRun | null; 
             <path d="M450 260 V335 H90 V260" strokeDasharray="4 6" />
           </g>
           <text x="260" y="353" textAnchor="middle" className={styles.wireLabel}>execution record · independent of policy</text>
-          {route ? <path d={route.path} className={styles.activePath} fill="none" strokeWidth="2.5" /> : null}
-          {route && !reducedMotion ? <circle key={run?.execution_id} r="5" className={styles.particle} style={{ offsetPath: `path('${route.path}')` }} aria-hidden="true" /> : null}
+           {route ? <path ref={pathRef} d={route.path} className={styles.activePath} fill="none" strokeWidth="2.5" /> : null}
+           {route && !reducedMotion && particle ? <g className={styles.eventMarker} transform={`translate(${particle.x} ${particle.y})`} aria-hidden="true"><circle r="13" className={styles.eventHalo} /><circle r="8" className={styles.eventCore} /><circle r="3" className={styles.eventSpark} /></g> : null}
           {nodes.map(({ id: nodeId, label, x, y, icon: Icon }, index) => {
             const reached = route?.nodes.includes(nodeId) || (nodeId === "store" && Boolean(run));
             return (
@@ -88,7 +127,7 @@ export function Topology({ run, scenarios, busy }: { run: SimulationRun | null; 
        <div className={styles.legend} role="group" aria-label="Topology legend">
         <span data-tone="cyan">Analysis</span><span data-tone="red">Block</span><span data-tone="green">Allow</span><span data-tone="violet">Review</span><span data-tone="amber">Unavailable / failed</span>
       </div>
-       <p className={styles.canvasFootnote} id={`${id}-topology-help`}>A one-time illustration of the returned result, not live network traffic or measured stage timing. Tab to explore nodes.</p>
+        <p className={styles.canvasFootnote} id={`${id}-topology-help`}>The marker is a bounded presentation of the synthetic result, not live network traffic or measured stage timing. Tab to explore nodes.</p>
     </div>
   );
 }

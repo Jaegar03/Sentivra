@@ -121,7 +121,7 @@ export default function CyberDefensePage() {
       <div className={styles.workspace}>
         <Card className={styles.topologyCard}>
           <CardHeader><div className={styles.sectionHeading}><h2><Activity size={17} aria-hidden="true" /> Security topology</h2><span className={styles.badge} data-tone="cyan">LOCAL PIPELINE</span></div><p className={styles.muted}>{runScenario ? `Showing: ${runScenario.name}` : "Eight conceptual nodes. Actual results. No external connections."}</p></CardHeader>
-          <CardContent><Topology run={run} scenarios={scenarios.data ?? []} busy={busy} /></CardContent>
+          <CardContent><Topology run={run} scenarios={scenarios.data ?? []} busy={busy} scenarioId={selected} /></CardContent>
         </Card>
 
         <Card className={styles.launcher}>

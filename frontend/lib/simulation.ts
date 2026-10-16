@@ -85,11 +85,26 @@ export function timelineElapsed(timestamp: string, startedAt: string) {
 }
 
 /** A conceptual route, not additional backend stages or wall-clock progress. */
-export function topologyRoute(kind: OutcomeKind) {
-  const detectionPath = "M90 90 H270 H450 H630";
-  if (["idle", "running"].includes(kind)) return null;
-  if (["failed", "unavailable"].includes(kind)) return { path: detectionPath, endpoint: "detector", nodes: ["source", "gateway", "engine", "detector"] };
+export function topologyRoute(kind: OutcomeKind, scenarioId?: string) {
+  const detectionPath = scenarioId === "network-anomaly" ? "M90 90 H450 H630" : "M90 90 H270 H450 H630";
+  const detectionNodes = scenarioId === "network-anomaly" ? ["source", "engine", "detector"] : ["source", "gateway", "engine", "detector"];
+  if (kind === "running") return { path: detectionPath, endpoint: "detector", nodes: detectionNodes };
+  if (kind === "idle") return null;
+  if (["failed", "unavailable"].includes(kind)) return { path: detectionPath, endpoint: "detector", nodes: detectionNodes };
   const policyPath = `${detectionPath} V260 H450`;
-  if (kind === "allow") return { path: `${policyPath} H270`, endpoint: "resource", nodes: ["source", "gateway", "engine", "detector", "risk", "enforce", "resource"] };
-  return { path: policyPath, endpoint: "enforce", nodes: ["source", "gateway", "engine", "detector", "risk", "enforce"] };
+  const fullNodes = [...detectionNodes, "risk", "enforce"];
+  if (kind === "allow") return { path: `${policyPath} H270`, endpoint: "resource", nodes: [...fullNodes, "resource"] };
+  return { path: policyPath, endpoint: "enforce", nodes: fullNodes };
+}
+
+export function presentationStage(progress: number, kind: OutcomeKind) {
+  if (kind === "idle") return "READY";
+  if (kind === "running" || progress < 0.2) return "EVENT MOVING TO GATEWAY";
+  if (progress < 0.62) return "SENTIVRA ANALYSIS";
+  if (progress < 0.86) return "RISK ASSESSMENT";
+  if (kind === "block") return "SIMULATED BLOCK";
+  if (kind === "allow") return "SIMULATED ALLOW";
+  if (kind === "review") return "REVIEW REQUIRED";
+  if (kind === "failed") return "SIMULATION FAILED";
+  return "ANALYSIS UNAVAILABLE";
 }

@@ -53,8 +53,11 @@
 .canvas { display: block; width: 100%; min-width: 540px; height: auto; }
 .wireLabel { fill: #9db3c3; font-size: 11px; }
 .activePath { stroke: var(--tone); opacity: .65; }
-.particle { fill: var(--tone); opacity: 0; animation: trace 3s ease-in-out 1 both; offset-distance: 0%; }
-@keyframes trace { 0% { offset-distance: 0%; opacity: 0; } 5% { opacity: 1; } 92% { opacity: 1; } 100% { offset-distance: 100%; opacity: 0; } }
+.eventMarker { filter: drop-shadow(0 0 8px var(--tone)); }
+.eventHalo { fill: color-mix(in srgb, var(--tone) 20%, transparent); stroke: var(--tone); stroke-width: 2; animation: markerPulse 1s ease-in-out infinite; }
+.eventCore { fill: var(--tone); stroke: #fff; stroke-width: 2; }
+.eventSpark { fill: #fff; }
+@keyframes markerPulse { 0%, 100% { opacity: .55; transform: scale(.9); } 50% { opacity: 1; transform: scale(1.12); } }
 .node { cursor: pointer; outline: none; color: #aec5d5; }
 .nodeFrame { fill: #12232f; stroke: #3d5568; stroke-width: 1.5; }
 .node[data-reached] .nodeFrame { stroke: color-mix(in srgb, var(--tone) 70%, #3d5568); }
@@ -187,6 +190,7 @@
   .safetyNotice p { font-size: .72rem; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .particle { display: none; animation: none; }
+  .eventMarker { filter: none; }
+  .eventHalo { animation: none; }
   .commandCenter *, .commandCenter *::before, .commandCenter *::after { scroll-behavior: auto; transition: none; }
 }
