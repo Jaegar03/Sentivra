@@ -21,6 +21,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.audit import service as audit_service
 from app.detectors.base import AvailabilityStatus, DetectorAvailability
 from app.detectors.file.metadata import analyze_file
 from app.detectors.registry import DetectorRegistry
@@ -32,6 +33,7 @@ from app.events.schema import (
     SourceType,
 )
 from app.models.simulation import SimulationExecutionORM
+from app.risk.engine import RiskEngine
 from app.schemas.detection import (
     AnalysisStatus,
     DetectionResult,
@@ -40,6 +42,9 @@ from app.schemas.detection import (
     Severity,
 )
 from app.security.auth import current_actor
+from app.services.alert_repository import AlertRepository
+from app.services.event_repository import EventRepository
+from app.services.local_target import synthetic_search_target
 from app.services.pipeline import run_pipeline
 
 SIMULATION_TIMEOUT_SECONDS = 15.0
@@ -63,6 +68,7 @@ class Scenario:
     version: str
     expected_outcome: str
     limitation: str
+    target_endpoint: str | None = None
 
 
 # This is the trust boundary.  Adding a scenario must explicitly name every
@@ -72,7 +78,8 @@ SCENARIOS = (
         "sqli-indicator", "SQL injection indicator", "Application security",
         "A harmless SQL-like request analyzed by local rules.", "SQLInjectionDetector",
         ("SQLInjectionDetector",), SecurityEventType.SQL_ANALYSIS, "1.0", "detected",
-        "Rule and lexical analysis only; no database is contacted.",
+        "Rule and lexical analysis only; the local synthetic target uses no database.",
+        "synthetic://search-target/search",
     ),
     Scenario(
         "prompt-injection-indicator", "Prompt injection indicator", "AI security",
@@ -100,9 +107,9 @@ SCENARIOS = (
     ),
     Scenario(
         "benign-control", "Benign control event", "Control",
-        "A normal synthetic message passed through the same local text pipeline.", "PromptInjectionDetector",
+        "A normal synthetic search request sent through the same local target.", "PromptInjectionDetector",
         ("PromptInjectionDetector",), SecurityEventType.TEXT_ANALYSIS, "1.0", "allow",
-        "A clean result is not a guarantee outside this fixture.",
+        "A clean result is not a guarantee outside this fixture.", "synthetic://search-target/search",
     ),
 )
 SCENARIO_MAP = {s.scenario_id: s for s in SCENARIOS}
@@ -149,7 +156,7 @@ def _fixture(scenario: Scenario) -> SecurityEvent:
             content=EventContent(urls=[url], body=url), metadata={**common, "analysis_url": url},
         )
     if scenario.scenario_id == "benign-control":
-        text = "The quarterly security review starts at ten."
+        text = "security"
         return SecurityEvent(
             event_type=scenario.event_type, source="cyber-defense-lab", source_type=SourceType.SIMULATED,
             content=EventContent(body=text), metadata={**common, "analysis_text": text},
@@ -174,6 +181,98 @@ def _fixture(scenario: Scenario) -> SecurityEvent:
         event_type=scenario.event_type, source="cyber-defense-lab", source_type=SourceType.SIMULATED,
         metadata={**common, "file_metadata": meta.__dict__},
     )
+
+
+def _target_query(event: SecurityEvent) -> str:
+    return (event.content.body if event.content else "") or ""
+
+
+async def _run_target_request(
+    db: Session,
+    registry: DetectorRegistry,
+    event: SecurityEvent,
+    actor: str,
+    timeline: list[dict[str, str]],
+) -> tuple[list[DetectionResult], RiskAssessment, dict[str, Any]]:
+    """Analyze then enforce one request before the target's protected method."""
+    scenario_id = str(event.metadata.get("scenario_id", ""))
+    scenario = SCENARIO_MAP[scenario_id]
+    detector = registry.get(scenario.detector)
+    timeline.append({"stage": "target_request_created", "timestamp": _iso(datetime.now(UTC))})
+    if detector is None:
+        unavailable = _unavailable_result(scenario.detector)
+        timeline.extend([
+            {"stage": "detection_completed", "timestamp": _iso(datetime.now(UTC))},
+            {"stage": "enforcement_decision", "timestamp": _iso(datetime.now(UTC))},
+            {"stage": "protected_operation_not_executed", "timestamp": _iso(datetime.now(UTC))},
+            {"stage": "target_response", "timestamp": _iso(datetime.now(UTC))},
+        ])
+        return [], RiskEngine().assess(event.event_id, []), {
+            "detector_availability": {scenario.detector: {"status": "Not Configured", "detail": "Detector is not registered"}},
+            "detection_state": "DETECTOR_UNAVAILABLE", "enforcement_decision": "ENFORCEMENT_UNAVAILABLE",
+            "errors": [f"{scenario.detector}: scanner_or_model_unavailable"],
+            "detector_result": unavailable.model_dump(mode="json"),
+            "enforcement": {"decision": "ENFORCEMENT_UNAVAILABLE", "reason": "The required detector is unavailable; the protected operation was fail-closed.", "mode": "simulation", "real_world_action_taken": False},
+            "target": {"endpoint": synthetic_search_target.endpoint, "status_code": 202, "response": {"status": "NOT_EXECUTED"}, "protected_operation_executed": False, "target_execution_state": "NOT_EXECUTED", "request_id": event.event_id},
+        }
+    availability = await _availability(registry, detector.name)
+    errors: list[str] = []
+    try:
+        detector_result = DetectionResult.model_validate(await asyncio.wait_for(detector.analyze(event), SIMULATION_TIMEOUT_SECONDS))
+    except TimeoutError:
+        detector_result = _unavailable_result(detector.name, FindingStatus.TIMED_OUT)
+        errors.append(f"{detector.name}: timed_out")
+    except Exception:  # noqa: BLE001 - detector boundary is sanitized and fail-closed
+        detector_result = _unavailable_result(detector.name, FindingStatus.INTERNAL_ERROR)
+        errors.append(f"{detector.name}: internal_error")
+    findings = [] if detector_result.severity == Severity.SAFE else [detector_result]
+    assessment = RiskEngine().assess(event.event_id, findings)
+    timeline.append({"stage": "detection_completed", "timestamp": _iso(datetime.now(UTC))})
+    timeline.append({"stage": "risk_assessed", "timestamp": _iso(datetime.now(UTC))})
+    if availability["status"] != AvailabilityStatus.AVAILABLE:
+        detection_state = "DETECTOR_UNAVAILABLE"
+        enforcement = "ENFORCEMENT_UNAVAILABLE"
+        enforcement_reason = "The SQL detector was unavailable; the protected operation was fail-closed."
+        errors.append(f"{detector.name}: scanner_or_model_unavailable")
+    elif detector_result.status in {FindingStatus.PARTIAL_ANALYSIS, FindingStatus.INTERNAL_ERROR, FindingStatus.TIMED_OUT}:
+        detection_state = "ANALYSIS_FAILED"
+        enforcement = "ENFORCEMENT_UNAVAILABLE"
+        enforcement_reason = "The SQL detector did not complete; the protected operation was fail-closed."
+        errors.append(f"{detector.name}: {detector_result.status.value}")
+    if errors:
+        assessment = assessment.model_copy(update={"analysis_status": AnalysisStatus.PARTIAL_ANALYSIS, "analysis_errors": sorted(set(errors))})
+    elif findings:
+        detection_state = "DETECTED"
+        enforcement = "BLOCKED" if assessment.severity in {Severity.HIGH, Severity.CRITICAL, Severity.MEDIUM} else "REVIEW_REQUIRED"
+        enforcement_reason = "The actual SQL detector identified a prohibited indicator before the protected operation."
+    else:
+        detection_state = "NOT_DETECTED"
+        enforcement = "ALLOWED"
+        enforcement_reason = "The actual SQL detector observed no prohibited indicator."
+    timeline.append({"stage": "enforcement_decision", "timestamp": _iso(datetime.now(UTC))})
+    target = synthetic_search_target.search(
+        request_id=event.event_id,
+        query=_target_query(event),
+        enforcement=enforcement,
+        timeline=timeline,
+    )
+    timeline.append({"stage": "target_response", "timestamp": _iso(datetime.now(UTC))})
+    if target.protected_operation_executed:
+        execution_state = "EXECUTED"
+    elif target.body.get("status") == "REJECTED_BEFORE_EXECUTION":
+        execution_state = "REJECTED_BEFORE_EXECUTION"
+    else:
+        execution_state = "NOT_EXECUTED"
+    target_payload = {
+        "endpoint": target.endpoint,
+        "status_code": target.status_code,
+        "response": target.body,
+        "protected_operation_executed": target.protected_operation_executed,
+        "target_execution_state": execution_state,
+        "request_id": event.event_id,
+    }
+    enforcement_payload = {"decision": enforcement, "reason": enforcement_reason, "mode": "simulation", "real_world_action_taken": False}
+    return findings, assessment, {"detector_availability": {detector.name: availability}, "detector_result": detector_result.model_dump(mode="json"), "detection_state": detection_state, "enforcement_decision": enforcement, "enforcement": enforcement_payload, "target": target_payload, "errors": sorted(set(errors))}
 
 
 def _safe_error(detector: str, kind: str = "internal_error") -> str:
@@ -232,6 +331,7 @@ async def list_scenarios(registry: DetectorRegistry) -> list[dict[str, Any]]:
             "version": scenario.version,
             "expected_outcome": scenario.expected_outcome,
             "limitation": scenario.limitation,
+            "target_endpoint": scenario.target_endpoint,
             "detector_availability": availability,
             "simulation_warning": "SIMULATED EVENT only; no real-world action can occur.",
         })
@@ -363,6 +463,41 @@ async def _execute(
                 detector_results.append(_unavailable_result(name))
 
         timeline.append({"stage": "detectors_started", "timestamp": _iso(datetime.now(UTC))})
+        if scenario.target_endpoint is not None and len(scenario.detector_allowlist) == 1:
+            findings, assessment, target_result = await asyncio.wait_for(
+                _run_target_request(db, registry, event, actor, timeline),
+                timeout=SIMULATION_TIMEOUT_SECONDS,
+            )
+            detector_results.extend(findings)
+            if target_result.get("detector_result"):
+                detector_results.append(DetectionResult.model_validate(target_result["detector_result"]))
+            availability = target_result["detector_availability"]
+            errors = target_result.get("errors", [])
+            row.status = "PARTIALLY_COMPLETED" if errors else "COMPLETED"
+            row.detection_state = target_result["detection_state"]
+            row.enforcement_decision = target_result["enforcement_decision"]
+            row.event_id = event.event_id
+            row.alert_id = assessment.assessment_id if assessment.severity.rank > 0 else None
+            row.completed_at = datetime.now(UTC)
+            row.duration_ms = max(0.0, (row.completed_at - started).total_seconds() * 1000)
+            timeline.append({"stage": "execution_completed", "timestamp": _iso(row.completed_at)})
+            EventRepository(db).create_if_absent(event, commit=False)
+            if assessment.severity.rank > 0:
+                AlertRepository(db).create(assessment, commit=False)
+            audit_service.record(db, actor=actor, action="simulation_target", resource=f"event:{event.event_id}", detail={"scenario_id": scenario.scenario_id, "enforcement": target_result["enforcement_decision"]}, commit=False)
+            row.result_json = json.dumps({
+                "mode": "simulation", "scenario": _scenario_summary(scenario),
+                "findings": [f.model_dump(mode="json") for f in findings],
+                "detector_results": [r.model_dump(mode="json") for r in detector_results],
+                "detector_availability": availability,
+                "risk_assessment": assessment.model_dump(mode="json"),
+                "enforcement": target_result["enforcement"],
+                "enforcement_decision": target_result["enforcement_decision"],
+                "target": target_result["target"], "errors": errors, "timeline": timeline,
+            })
+            db.commit()
+            return row
+
         findings, assessment = await asyncio.wait_for(
             run_pipeline(
                 event,

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db, get_detector_registry
 from app.detectors.registry import DetectorRegistry
 from app.security.auth import require_scopes
+from app.services.local_target import synthetic_search_target
 from app.services.simulation import (
     MAX_HISTORY_OFFSET,
     SCENARIO_MAP,
@@ -40,6 +41,13 @@ class SimulationRequest(BaseModel):
 @router.get("/scenarios")
 async def scenarios(registry: DetectorRegistry = Depends(get_detector_registry)) -> list[dict]:
     return await list_scenarios(registry)
+
+
+@router.post("/target/reset", dependencies=[Depends(require_scopes("analyze"))])
+async def reset_target() -> dict:
+    """Reset only the in-memory synthetic target; no Sentivra records are deleted."""
+    synthetic_search_target.reset()
+    return {"mode": "simulation", "target": synthetic_search_target.endpoint, "reset": True}
 
 
 @router.post("/run", dependencies=[Depends(require_scopes("analyze"))])

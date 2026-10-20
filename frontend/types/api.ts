@@ -136,6 +136,7 @@ export interface SimulationScenario {
   version: string;
   expected_outcome: string;
   limitation: string;
+  target_endpoint?: string | null;
   detector_availability: { status: string; detail: string; engine_version?: string | null };
   simulation_warning: string;
 }
@@ -148,7 +149,7 @@ export interface SimulationRun {
   simulation_marker: string;
   source_type: "SIMULATED";
   detection_state: "DETECTED" | "NOT_DETECTED" | "REVIEW_REQUIRED" | "DETECTOR_UNAVAILABLE" | "ANALYSIS_FAILED";
-  enforcement_decision: "SIMULATED_BLOCK" | "SIMULATED_ALLOW" | "SIMULATED_REVIEW" | "SIMULATED_UNAVAILABLE";
+  enforcement_decision: "SIMULATED_BLOCK" | "SIMULATED_ALLOW" | "SIMULATED_REVIEW" | "SIMULATED_UNAVAILABLE" | "BLOCKED" | "ALLOWED" | "REVIEW_REQUIRED" | "ENFORCEMENT_UNAVAILABLE";
   event_id?: string | null;
   alert_id?: string | null;
   started_at: string;
@@ -164,6 +165,7 @@ export interface SimulationRun {
   risk_assessment?: RiskAssessment | null;
   enforcement?: { decision: string; reason: string; mode: string; real_world_action_taken: boolean };
   scenario?: { id: string; name: string; limitation: string };
+  target?: { endpoint: string; status_code: number; response: Record<string, unknown>; protected_operation_executed: boolean; target_execution_state: string; request_id: string };
 }
 
 export interface SimulationStats {

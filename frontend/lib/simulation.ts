@@ -35,8 +35,8 @@ export function runOutcome(run: SimulationRun | null) {
     if (run.status === "RUNNING") kind = "running";
     else if (run.status === "FAILED" || run.detection_state === "ANALYSIS_FAILED") kind = "failed";
     else if (incomplete || run.status === "PARTIALLY_COMPLETED" || run.enforcement_decision === "SIMULATED_UNAVAILABLE" || run.detection_state === "DETECTOR_UNAVAILABLE") kind = "unavailable";
-    else if (run.status === "COMPLETED" && run.enforcement_decision === "SIMULATED_BLOCK") kind = "block";
-    else if (run.status === "COMPLETED" && run.enforcement_decision === "SIMULATED_ALLOW") kind = "allow";
+    else if (run.status === "COMPLETED" && ["SIMULATED_BLOCK", "BLOCKED"].includes(run.enforcement_decision)) kind = "block";
+    else if (run.status === "COMPLETED" && ["SIMULATED_ALLOW", "ALLOWED"].includes(run.enforcement_decision)) kind = "allow";
     else kind = "review";
   }
   return { kind, ...outcomes[kind] };
@@ -107,4 +107,64 @@ export function presentationStage(progress: number, kind: OutcomeKind) {
   if (kind === "review") return "REVIEW REQUIRED";
   if (kind === "failed") return "SIMULATION FAILED";
   return "ANALYSIS UNAVAILABLE";
+}
+
+export type SimulationTimelineEntry = { stage: string; timestamp: string };
+
+const playbackLabels: Record<string, string> = {
+  fixture_created: "STARTED",
+  target_request_created: "REQUEST RECEIVED",
+  detectors_started: "DETECTION STARTED",
+  detection_completed: "DETECTION COMPLETED",
+  risk_assessed: "RISK ASSESSED",
+  enforcement_decision: "ENFORCEMENT DECIDED",
+  target_handler_entered: "TARGET HANDLER",
+  protected_operation_entered: "PROTECTED OPERATION",
+  protected_operation_completed: "TARGET RESPONSE",
+  protected_operation_not_executed: "ENFORCEMENT BOUNDARY",
+  target_response: "TARGET RESPONSE",
+  execution_completed: "COMPLETED",
+  failed: "FAILED",
+};
+
+const playbackNodes: Record<string, string> = {
+  fixture_created: "source",
+  target_request_created: "gateway",
+  detectors_started: "engine",
+  detection_completed: "detector",
+  risk_assessed: "risk",
+  enforcement_decision: "enforce",
+  target_handler_entered: "enforce",
+  protected_operation_entered: "resource",
+  protected_operation_completed: "resource",
+  protected_operation_not_executed: "enforce",
+  target_response: "resource",
+  execution_completed: "resource",
+  failed: "detector",
+};
+
+export function playbackCheckpoint(timeline: SimulationTimelineEntry[], progress: number, outcomeKind: OutcomeKind) {
+  const entries = timeline.filter((entry) => playbackLabels[entry.stage]);
+  if (!entries.length) return { label: presentationStage(progress, outcomeKind), node: outcomeKind === "running" ? "gateway" : "source" };
+  const index = Math.min(entries.length - 1, Math.floor(Math.max(0, Math.min(1, progress)) * entries.length));
+  const entry = entries[index];
+  const finalNode = outcomeKind === "allow" ? "resource" : outcomeKind === "block" || outcomeKind === "review" ? "enforce" : "detector";
+  const terminalStage = entry.stage === "target_response" || entry.stage === "execution_completed" || entry.stage === "failed";
+  return { label: playbackLabels[entry.stage], node: terminalStage ? finalNode : playbackNodes[entry.stage] };
+}
+
+export function hasConfirmedBlock(run: SimulationRun) {
+  return run.status === "COMPLETED" && run.enforcement_decision === "BLOCKED" &&
+    run.target?.target_execution_state === "REJECTED_BEFORE_EXECUTION" && run.target.protected_operation_executed === false;
+}
+
+export function hasConfirmedAllow(run: SimulationRun) {
+  return run.status === "COMPLETED" && run.enforcement_decision === "ALLOWED" &&
+    run.target?.target_execution_state === "EXECUTED" && run.target.protected_operation_executed === true;
+}
+
+export function comparisonSummary(runs: SimulationRun[]) {
+  const blocked = runs.filter(hasConfirmedBlock).length;
+  const allowed = runs.filter(hasConfirmedAllow).length;
+  return { executed: runs.length, blocked, allowed, unverified: Math.max(0, runs.length - blocked - allowed), complete: runs.length === 2 && blocked + allowed === 2 };
 }

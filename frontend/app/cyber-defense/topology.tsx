@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Activity, Database, Gauge, GitBranch, LockKeyhole, Server, Shield, Square } from "lucide-react";
 
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
-import { detectionLabel, displayedScenario, presentationStage, runOutcome, topologyRoute } from "@/lib/simulation";
+import { detectionLabel, displayedScenario, playbackCheckpoint, runOutcome, topologyRoute } from "@/lib/simulation";
 import type { SimulationRun, SimulationScenario } from "@/types/api";
 import styles from "./command-center.module.css";
 
@@ -28,6 +28,7 @@ export function Topology({ run, scenarios, busy, scenarioId }: { run: Simulation
   const outcome = runOutcome(run);
   const activeScenarioId = run?.scenario_id ?? scenarioId;
   const route = topologyRoute(outcome.kind, activeScenarioId) ?? (busy ? topologyRoute("running", activeScenarioId) : null);
+  const timeline = run?.timeline ?? [];
   const pathRef = useRef<SVGPathElement>(null);
   const frameRef = useRef<number | null>(null);
   const [progress, setProgress] = useState(0);
@@ -54,7 +55,7 @@ export function Topology({ run, scenarios, busy, scenarioId }: { run: Simulation
       return;
     }
     const started = performance.now();
-    const duration = 5_500;
+    const duration = busy ? 1_800 : 6_500;
     let cancelled = false;
     const tick = (now: number) => {
       if (cancelled) return;
@@ -77,7 +78,10 @@ export function Topology({ run, scenarios, busy, scenarioId }: { run: Simulation
   }, [routePath, routeEndpoint, run?.execution_id, busy, reducedMotion]);
 
   const particle = route && !reducedMotion ? particlePoint : null;
-  const stage = busy ? presentationStage(progress, "running") : presentationStage(progress, outcome.kind);
+  const displayProgress = reducedMotion ? 1 : progress;
+  const checkpoint = playbackCheckpoint(timeline, displayProgress, outcome.kind);
+  const currentNode = busy ? (displayProgress < 0.5 ? "source" : "gateway") : checkpoint.node;
+  const stage = busy ? (displayProgress < 0.5 ? "STARTED" : "REQUEST RECEIVED") : run ? checkpoint.label : "READY";
 
   return (
     <div className={styles.topology} data-tone={outcome.tone}>
@@ -101,10 +105,10 @@ export function Topology({ run, scenarios, busy, scenarioId }: { run: Simulation
            {route ? <path ref={pathRef} d={route.path} className={styles.activePath} fill="none" strokeWidth="2.5" /> : null}
            {route && !reducedMotion && particle ? <g className={styles.eventMarker} transform={`translate(${particle.x} ${particle.y})`} aria-hidden="true"><circle r="13" className={styles.eventHalo} /><circle r="8" className={styles.eventCore} /><circle r="3" className={styles.eventSpark} /></g> : null}
           {nodes.map(({ id: nodeId, label, x, y, icon: Icon }, index) => {
-            const reached = route?.nodes.includes(nodeId) || (nodeId === "store" && Boolean(run));
+             const reached = route?.nodes.includes(nodeId) || (nodeId === "store" && Boolean(run));
             return (
                 <g key={nodeId} role="option" tabIndex={0} aria-label={label} aria-selected={selected === nodeId}
-                aria-controls={`${id}-details`} className={styles.node} data-selected={selected === nodeId} data-reached={reached || undefined}
+                 aria-controls={`${id}-details`} className={styles.node} data-selected={selected === nodeId} data-current={currentNode === nodeId || undefined} data-reached={reached || undefined}
                 data-endpoint={route?.endpoint === nodeId || undefined}
                 onClick={() => setSelected(nodeId)} onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelected(nodeId); }
@@ -127,7 +131,7 @@ export function Topology({ run, scenarios, busy, scenarioId }: { run: Simulation
        <div className={styles.legend} role="group" aria-label="Topology legend">
         <span data-tone="cyan">Analysis</span><span data-tone="red">Block</span><span data-tone="green">Allow</span><span data-tone="violet">Review</span><span data-tone="amber">Unavailable / failed</span>
       </div>
-        <p className={styles.canvasFootnote} id={`${id}-topology-help`}>The marker is a bounded presentation of the synthetic result, not live network traffic or measured stage timing. Tab to explore nodes.</p>
+        <p className={styles.canvasFootnote} id={`${id}-topology-help`}>The marker replays the recorded execution stages after the backend result is known; while waiting, it only represents an in-flight request to the gateway.</p>
     </div>
   );
 }

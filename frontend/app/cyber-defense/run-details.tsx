@@ -23,12 +23,13 @@ export function RunDetails({ run, scenarios }: { run: SimulationRun; scenarios: 
         </CardHeader>
         <CardContent className={styles.resultBody}>
           <div className={styles.verdict}><ShieldAlert size={22} aria-hidden="true" /><div><h3>{outcome.label}</h3><p>{outcome.explanation}</p></div></div>
-          <dl className={styles.resultMetrics}>
+           <dl className={styles.resultMetrics}>
             <div><dt>Execution</dt><dd>{readable(run.status)}</dd></div>
             <div><dt>Detection</dt><dd>{detectionLabel(run.detection_state)}</dd></div>
             <div><dt>Risk assessment</dt><dd>{run.risk_assessment ? <><SeverityBadge severity={run.risk_assessment.severity} /><span>{run.risk_assessment.risk_score}/100</span></> : "Not recorded"}</dd></div>
-            <div><dt>Recorded duration</dt><dd>{formatDuration(durationMs(run))}</dd></div>
-          </dl>
+             <div><dt>Recorded duration</dt><dd>{formatDuration(durationMs(run))}</dd></div>
+           </dl>
+            {run.target ? <div className={styles.policyExplanation}><strong>Local target request</strong><p>{run.target.endpoint}</p><p>HTTP {run.target.status_code} · Target outcome: {readable(run.target.target_execution_state)} · Protected operation: {run.target.protected_operation_executed ? "EXECUTED" : "NOT EXECUTED"}</p><pre className={styles.targetResponse}>{JSON.stringify(run.target.response, null, 2)}</pre></div> : null}
           <div className={styles.policyExplanation}><strong>Policy explanation</strong><p>{run.enforcement?.reason ?? "No policy explanation was recorded."}</p><p className={styles.muted}>Recorded decision: {readable(run.enforcement_decision)} · Real-world action: {run.enforcement?.real_world_action_taken === false ? "none" : run.enforcement?.real_world_action_taken ? "unexpected action reported" : "not recorded"}</p></div>
           {errors.length ? <div role="status" className={styles.analysisErrors}><strong>Analysis limitations / errors</strong><ul>{errors.map((error) => <li key={error}>{error}</li>)}</ul></div> : null}
           <p className={styles.muted}>{scenario.limitation}</p>

@@ -43,6 +43,7 @@ from app.security import auth
 from app.services import simulation as service
 from app.services.alert_repository import AlertRepository
 from app.services.event_repository import EventRepository
+from app.services.local_target import synthetic_search_target
 
 REQUIRED = {
     "sqli-indicator", "prompt-injection-indicator", "network-anomaly",
@@ -104,6 +105,7 @@ def test_scenario_registry_is_trusted_and_complete(lab):
     assert {row["scenario_id"] for row in rows} == REQUIRED
     assert all(row["simulation_warning"] and row["detector_availability"] for row in rows)
     assert all("ClamAVDetector" not in row["detector_allowlist"] for row in rows)
+    assert next(row for row in rows if row["scenario_id"] == "sqli-indicator")["target_endpoint"] == synthetic_search_target.endpoint
 
 
 @pytest.mark.parametrize("extra", [
@@ -122,6 +124,38 @@ def test_unknown_scenario_and_bounded_history(lab):
     assert run(client, "nope").status_code == 404
     for query in ("limit=101", "limit=0", "offset=-1", "offset=10001"):
         assert client.get(f"/api/simulation/runs?{query}").status_code == 422
+
+
+def test_sql_attack_is_rejected_before_protected_operation_and_benign_control_executes(lab):
+    client, _ = lab
+    synthetic_search_target.reset()
+    attack = run(client, "sqli-indicator").json()
+    assert attack["detection_state"] == "DETECTED"
+    assert attack["enforcement_decision"] == "BLOCKED"
+    assert attack["target"]["target_execution_state"] == "REJECTED_BEFORE_EXECUTION"
+    assert attack["target"]["protected_operation_executed"] is False
+    assert attack["target"]["status_code"] == 403
+    attack_stages = [item["stage"] for item in attack["timeline"]]
+    assert attack_stages.index("target_request_created") < attack_stages.index("target_handler_entered") < attack_stages.index("protected_operation_not_executed") < attack_stages.index("target_response")
+    assert synthetic_search_target.protected_operation_count == 0
+
+    benign = run(client, "benign-control").json()
+    assert benign["detection_state"] == "NOT_DETECTED"
+    assert benign["enforcement_decision"] == "ALLOWED"
+    assert benign["target"]["target_execution_state"] == "EXECUTED"
+    assert benign["target"]["protected_operation_executed"] is True
+    benign_stages = [item["stage"] for item in benign["timeline"]]
+    assert benign_stages.index("target_handler_entered") < benign_stages.index("protected_operation_entered") < benign_stages.index("protected_operation_completed") < benign_stages.index("target_response")
+    assert synthetic_search_target.protected_operation_count == 1
+
+
+def test_target_reset_does_not_delete_simulation_history(lab):
+    client, _ = lab
+    run(client, "sqli-indicator")
+    before = len(client.get("/api/simulation/runs").json())
+    reset = client.post("/api/simulation/target/reset")
+    assert reset.status_code == 200 and reset.json()["reset"] is True
+    assert len(client.get("/api/simulation/runs").json()) == before
 
 
 @pytest.mark.parametrize("scenario_id", sorted(REQUIRED))
@@ -154,7 +188,7 @@ def test_six_real_detector_fixtures_persist_and_match_risk_engine(lab, local_db,
     if scenario_id == "benign-control":
         assert body["findings"] == []
         assert body["detector_results"][0]["status"] == "no_finding_observed"
-        assert body["enforcement_decision"] == "SIMULATED_ALLOW"
+        assert body["enforcement_decision"] == "ALLOWED"
     assert client.get(f"/api/simulation/runs/{body['execution_id']}").json() == body
     assert client.get("/api/simulation/runs").json() == [body]
     assert len(local_db.execute(select(AuditLogORM)).scalars().all()) == 1
@@ -316,7 +350,7 @@ def test_failure_never_claims_allow_or_block_and_sanitizes(lab, registry, monkey
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["status"] in {"FAILED", "PARTIALLY_COMPLETED"}
-    assert body["enforcement_decision"] in {"SIMULATED_UNAVAILABLE", "SIMULATED_REVIEW"}
+    assert body["enforcement_decision"] in {"ENFORCEMENT_UNAVAILABLE", "SIMULATED_UNAVAILABLE", "SIMULATED_REVIEW"}
     assert body["enforcement"]["real_world_action_taken"] is False
     assert body["errors"]
     assert secret not in json.dumps(body)
@@ -353,7 +387,7 @@ def test_degraded_availability_preserves_findings_without_block(lab, registry, m
     )))
     body = run(client).json()
     assert body["status"] == "PARTIALLY_COMPLETED" and body["findings"]
-    assert body["enforcement_decision"] == "SIMULATED_UNAVAILABLE"
+    assert body["enforcement_decision"] == "ENFORCEMENT_UNAVAILABLE"
     assert "private raw model error" not in json.dumps(body)
 
 
@@ -503,7 +537,7 @@ def test_rule_timeout_is_partial_even_when_other_rules_detect(lab, registry, mon
     ])
     body = run(client).json()
     assert body["status"] == "PARTIALLY_COMPLETED" and body["findings"]
-    assert body["enforcement_decision"] == "SIMULATED_UNAVAILABLE"
+    assert body["enforcement_decision"] == "ENFORCEMENT_UNAVAILABLE"
     assert body["detector_results"][0]["status"] == "partial_analysis"
     assert "private regexp details" not in json.dumps(body)
 

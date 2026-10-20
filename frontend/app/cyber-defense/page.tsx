@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Activity, ArrowLeft, ArrowRight, Crosshair, History, Play, RefreshCw, RotateCcw, ShieldCheck } from "lucide-react";
+import { Activity, ArrowLeft, ArrowRight, Crosshair, History, Maximize2, Minimize2, Play, RefreshCw, RotateCcw, ShieldCheck } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingBlock, PageHeader } from "@/components/sentivra/states";
 import { SourceTypeBadge } from "@/components/sentivra/badges";
@@ -13,6 +13,7 @@ import { createRequestKey, detectionLabel, displayedScenario, formatDuration, fo
 import type { SimulationRun, SimulationScenario, SimulationStats } from "@/types/api";
 import { RunDetails } from "./run-details";
 import { Topology } from "./topology";
+import { ComparisonPanel } from "./comparison";
 import styles from "./command-center.module.css";
 
 type Attempt = { scenarioId: string; requestKey: string };
@@ -28,6 +29,10 @@ export default function CyberDefensePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [attempt, setAttempt] = useState<Attempt | null>(null);
+  const [comparisonRuns, setComparisonRuns] = useState<SimulationRun[]>([]);
+  const [comparisonError, setComparisonError] = useState<unknown>(null);
+  const [sequenceBusy, setSequenceBusy] = useState(false);
+  const [presentationMode, setPresentationMode] = useState(false);
   const inFlight = useRef(false);
   const pendingAttempt = useRef<Attempt | null>(null);
   const detail = useApi<SimulationRun>(selectedRun ? `/api/simulation/runs/${encodeURIComponent(selectedRun.execution_id)}` : null, {
@@ -42,6 +47,7 @@ export default function CyberDefensePage() {
   const rows = history.data?.slice(0, HISTORY_PAGE_SIZE) ?? [];
   const counts = stats.data?.totals;
   const pending = Boolean(attempt);
+  const controlsBusy = busy || sequenceBusy;
   const previousStatus = useRef<string | null>(null);
   const { mutate: mutateStats } = stats;
   const { mutate: mutateHistory } = history;
@@ -56,9 +62,9 @@ export default function CyberDefensePage() {
     previousStatus.current = run?.status ?? null;
   }, [run, mutateStats, mutateHistory]);
 
-  async function execute(retry = false) {
+  async function execute(retry = false, scenarioIdOverride?: string) {
     if (inFlight.current) return;
-    const request = retry ? pendingAttempt.current : scenario ? { scenarioId: scenario.scenario_id, requestKey: createRequestKey() } : null;
+    const request = retry ? pendingAttempt.current : scenarioIdOverride ? { scenarioId: scenarioIdOverride, requestKey: createRequestKey() } : scenario ? { scenarioId: scenario.scenario_id, requestKey: createRequestKey() } : null;
     if (!request || (!retry && pendingAttempt.current)) return;
     // A synchronous guard prevents same-tick double submissions before React renders.
     inFlight.current = true;
@@ -67,6 +73,7 @@ export default function CyberDefensePage() {
     setBusy(true);
     setError(null);
     setSelectedRun(null);
+    setComparisonRuns([]);
     try {
       const result = await api.runSimulation(request.scenarioId, request.requestKey);
       setSelectedRun(result);
@@ -85,6 +92,44 @@ export default function CyberDefensePage() {
     }
   }
 
+  async function runBothScenarios() {
+    if (inFlight.current) return;
+    const ids = ["sqli-indicator", "benign-control"].filter((id) => scenarios.data?.some((item) => item.scenario_id === id));
+    if (ids.length !== 2) return;
+    inFlight.current = true;
+    setSequenceBusy(true);
+    setBusy(true);
+    setSelectedRun(null);
+    setComparisonRuns([]);
+    setComparisonError(null);
+    setError(null);
+    try {
+      const results: SimulationRun[] = [];
+      for (const scenarioId of ids) {
+        const result = await api.runSimulation(scenarioId, createRequestKey());
+        results.push(result);
+        setComparisonRuns([...results]);
+        setSelectedRun(result);
+        if (results.length === 1) {
+          // Let the first confirmed execution complete its full presentation
+          // before resetting the temporary marker for the second request.
+          setBusy(false);
+          await new Promise((resolve) => window.setTimeout(resolve, 6_500));
+          setSelectedRun(null);
+          setBusy(true);
+        }
+      }
+      void mutateHistory();
+      void mutateStats();
+    } catch (cause) {
+      setComparisonError(cause);
+    } finally {
+      inFlight.current = false;
+      setSequenceBusy(false);
+      setBusy(false);
+    }
+  }
+
   function dismissRequest() {
     if (inFlight.current) return;
     pendingAttempt.current = null;
@@ -95,11 +140,11 @@ export default function CyberDefensePage() {
   }
 
   return (
-    <div className={styles.commandCenter}>
+    <div className={`${styles.commandCenter} ${presentationMode ? styles.presentationMode : ""}`}>
       <div className={styles.hero}>
         <p className={styles.eyebrow}><Crosshair size={14} aria-hidden="true" /> Sentivra / defense lab</p>
         <PageHeader title="Cyber Defense Command Center" description="Simulate. Detect. Analyze. Defend. Trace trusted fixtures through your local security pipeline."
-          actions={<Button variant="outline" onClick={() => setSelectedRun(null)} disabled={busy || !selectedRun}><RotateCcw /> Reset visualization</Button>} />
+           actions={<div className={styles.headerActions}><Button variant="outline" onClick={() => setPresentationMode((value) => !value)} aria-pressed={presentationMode}>{presentationMode ? <Minimize2 /> : <Maximize2 />}{presentationMode ? "Exit presentation" : "Presentation mode"}</Button><Button variant="outline" onClick={() => setSelectedRun(null)} disabled={controlsBusy || !selectedRun}><RotateCcw /> Reset visualization</Button></div>} />
       </div>
 
       <div role="note" className={styles.safetyNotice}><ShieldCheck size={20} aria-hidden="true" /><p>{SIMULATION_NOTICE}</p><span className={styles.marker}>SIMULATED EVENT</span></div>
@@ -131,9 +176,11 @@ export default function CyberDefensePage() {
             {!scenarios.data && !scenarios.error ? <LoadingBlock label="Loading trusted scenarios…" /> : null}
             {scenarios.data?.length === 0 ? <EmptyState title="No scenarios available">The server has no registered simulation fixtures.</EmptyState> : null}
             {scenarios.data?.length ? <>
-              <label className={styles.selectLabel} htmlFor="simulation-scenario">Trusted scenario<select id="simulation-scenario" value={selected} disabled={busy || pending} onChange={(event) => setSelectedId(event.target.value)}>{scenarios.data.map((item) => <option key={item.scenario_id} value={item.scenario_id}>{item.name}</option>)}</select></label>
-              {scenario ? <div className={styles.scenarioInfo}><span className={styles.category}>{scenario.category}</span><p>{scenario.description}</p><div><span className={styles.fieldLabel}>Scenario detectors</span><ul className={styles.detectorNames}>{(scenario.detector_allowlist?.length ? scenario.detector_allowlist : [scenario.detector]).map((name) => <li key={name}>{name}</li>)}</ul></div><div className={styles.availability}><span className={styles.badge} data-tone={scenario.detector_availability.status === "Available" ? "cyan" : "amber"}>{scenario.detector_availability.status}</span><p>{scenario.detector_availability.detail}</p></div><p className={styles.limitation}>{scenario.limitation}</p></div> : null}
-              <Button size="lg" className={styles.launchButton} disabled={busy || pending || !scenario} onClick={() => void execute()}><Play aria-hidden="true" />{busy ? "Analyzing fixture…" : "Run simulation"}</Button>
+              <label className={styles.selectLabel} htmlFor="simulation-scenario">Trusted scenario<select id="simulation-scenario" value={selected} disabled={controlsBusy || pending} onChange={(event) => setSelectedId(event.target.value)}>{scenarios.data.map((item) => <option key={item.scenario_id} value={item.scenario_id}>{item.name}</option>)}</select></label>
+               {scenario ? <div className={styles.scenarioInfo}><span className={styles.category}>{scenario.category}</span><p>{scenario.description}</p>{scenario.target_endpoint ? <div className={styles.targetInfo}><span className={styles.fieldLabel}>Isolated target</span><code>{scenario.target_endpoint}</code><p>Request execution is local, synthetic, and fail-closed at the enforcement boundary.</p></div> : null}<div><span className={styles.fieldLabel}>Scenario detectors</span><ul className={styles.detectorNames}>{(scenario.detector_allowlist?.length ? scenario.detector_allowlist : [scenario.detector]).map((name) => <li key={name}>{name}</li>)}</ul></div><div className={styles.availability}><span className={styles.badge} data-tone={scenario.detector_availability.status === "Available" ? "cyan" : "amber"}>{scenario.detector_availability.status}</span><p>{scenario.detector_availability.detail}</p></div><p className={styles.limitation}>{scenario.limitation}</p></div> : null}
+               <Button size="lg" className={styles.launchButton} disabled={controlsBusy || pending || !scenario} onClick={() => void execute()}><Play aria-hidden="true" />{busy ? "Running attack path…" : scenario?.target_endpoint ? "Start attack simulation" : "Run simulation"}</Button>
+               <div className={styles.launchActions}><Button variant="outline" size="sm" disabled={controlsBusy || pending || !scenarios.data?.some((item) => item.scenario_id === "sqli-indicator")} onClick={() => void execute(false, "sqli-indicator")}>Run SQL injection test</Button><Button variant="outline" size="sm" disabled={controlsBusy || pending || !scenarios.data?.some((item) => item.scenario_id === "benign-control")} onClick={() => void execute(false, "benign-control")}>Run benign control</Button><Button variant="outline" size="sm" disabled={controlsBusy || pending} onClick={() => void runBothScenarios()}>Run both scenarios</Button></div>
+               <span className={styles.muted}>The controls run trusted server-owned fixtures; both scenarios use the same detector and target boundary.</span>
             </> : null}
              <p className={styles.launchHint} role="status">{busy ? "Waiting for the backend result. The visualization begins only after a response." : run?.status === "RUNNING" ? "This execution is still running. Its status is refreshed with read-only requests." : "Each launch records one execution. Reset clears only the displayed result; it never cancels or deletes a run."}</p>
             {error ? <div className={styles.requestError}><ErrorState error={error} /><p>The result is unconfirmed. Retry reuses the same request key to recover this execution.</p><code>{attempt?.requestKey}</code><Button variant="outline" disabled={busy} onClick={() => void execute(true)}><RefreshCw /> Retry same request</Button><Button variant="ghost" disabled={busy} onClick={dismissRequest}>Dismiss pending request</Button><p>Dismissing only clears local request state; backend work is not cancelled.</p></div> : null}
@@ -142,17 +189,19 @@ export default function CyberDefensePage() {
       </div>
 
       {selectedRun && detail.error ? <div className={styles.errorWithRetry}><ErrorState error={detail.error} /><p className={styles.muted}>Showing the last received snapshot for this execution.</p><Button variant="outline" disabled={detail.isValidating || busy} onClick={() => void detail.mutate()}>Retry execution details</Button></div> : null}
+      {comparisonError ? <ErrorState error={comparisonError} /> : null}
+      {comparisonRuns.length === 2 ? <ComparisonPanel runs={comparisonRuns} scenarios={scenarios.data ?? []} selectedExecutionId={selectedRun?.execution_id} presentationMode={presentationMode} onSelectExecution={setSelectedRun} /> : null}
       {run ? <RunDetails run={run} scenarios={scenarios.data ?? []} /> : <EmptyState title={busy ? "Analyzing the selected fixture" : "Ready to trace a simulation"}>{busy ? "No detection or enforcement result is assumed while the request is in flight." : "Run a trusted scenario or open an execution below to inspect evidence, policy, and recorded timing."}</EmptyState>}
 
-      <Card>
-        <CardHeader><div className={styles.sectionHeading}><h2><History size={17} aria-hidden="true" /> Execution history</h2><Button variant="ghost" size="sm" disabled={busy || history.isValidating} onClick={() => { void history.mutate(); void stats.mutate(); }}><RefreshCw /> Refresh history</Button></div><p className={styles.muted}>Stored simulation executions. Select a row to inspect its own scenario and evidence.</p></CardHeader>
+       <Card className={styles.historySection}>
+        <CardHeader><div className={styles.sectionHeading}><h2><History size={17} aria-hidden="true" /> Execution history</h2><Button variant="ghost" size="sm" disabled={controlsBusy || history.isValidating} onClick={() => { void history.mutate(); void stats.mutate(); }}><RefreshCw /> Refresh history</Button></div><p className={styles.muted}>Stored simulation executions. Select a row to inspect its own scenario and evidence.</p></CardHeader>
         <CardContent>
           {history.error ? <div className={styles.errorWithRetry}><ErrorState error={history.error} /><Button variant="outline" disabled={history.isValidating} onClick={() => void history.mutate()}>Retry history</Button></div> : null}
           {history.isLoading ? <LoadingBlock label="Loading execution history…" /> : null}
           {!history.isLoading && !history.error && !rows.length ? <EmptyState title={offset ? "No more executions" : "No simulations yet"}>{offset ? "Return to the previous page or refresh history." : "Your first recorded simulation will appear here."}</EmptyState> : null}
-          {rows.length ? <div className={styles.historyList}>{rows.map((item) => {
+           {rows.length ? <div className={styles.historyList}>{rows.map((item) => {
             const outcome = runOutcome(item);
-            return <button type="button" key={item.execution_id} disabled={busy} className={styles.historyRow} aria-pressed={run?.execution_id === item.execution_id} onClick={() => setSelectedRun(item)}>
+             return <button type="button" key={item.execution_id} disabled={controlsBusy} className={styles.historyRow} aria-pressed={run?.execution_id === item.execution_id} onClick={() => setSelectedRun(item)}>
               <span className={styles.historyIcon} data-tone={outcome.tone}><Activity size={17} aria-hidden="true" /></span>
               <span className={styles.historyIdentity}><strong>{item.scenario?.name ?? scenarios.data?.find((entry) => entry.scenario_id === item.scenario_id)?.name ?? item.scenario_id}</strong><time dateTime={item.started_at} title={item.started_at}>{formatTimestamp(item.started_at)}</time><span className={styles.historyId}>{item.execution_id}</span></span>
                <span className={styles.historyStatus}><span className={styles.badge} data-tone={outcome.tone}>{outcome.label}</span><span>{readable(item.status)} · {detectionLabel(item.detection_state)}</span><SourceTypeBadge sourceType={item.source_type} /><span className={styles.historyMarker}>SIMULATED EVENT</span></span><ArrowRight size={16} aria-hidden="true" />
